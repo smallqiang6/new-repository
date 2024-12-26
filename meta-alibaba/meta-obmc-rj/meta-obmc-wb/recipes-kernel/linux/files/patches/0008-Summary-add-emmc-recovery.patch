@@ -1,0 +1,594 @@
+From d7cd17210fcc0c4442e549b6dcdf14899a0e8ad1 Mon Sep 17 00:00:00 2001
+From: zhouyongtao <zhouyongtao@ruijie.com.cn>
+Date: Tue, 3 Sep 2024 10:55:54 +0800
+Subject: [PATCH 8/8] Summary:add emmc recovery
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202409034125
+BUGID:
+WorkPackageName: bsp
+The ratio of self research code(0~1):
+---
+ drivers/mmc/core/Makefile  |   2 +-
+ drivers/mmc/core/core.c    |   5 +
+ drivers/mmc/core/core.h    |   6 +
+ drivers/mmc/core/mmc.c     |  66 +++++++-
+ drivers/mmc/core/mmc_ext.c | 301 +++++++++++++++++++++++++++++++++++++
+ drivers/mmc/core/mmc_ext.h |  46 ++++++
+ 6 files changed, 420 insertions(+), 6 deletions(-)
+ create mode 100644 drivers/mmc/core/mmc_ext.c
+ create mode 100644 drivers/mmc/core/mmc_ext.h
+
+diff --git a/drivers/mmc/core/Makefile b/drivers/mmc/core/Makefile
+index 6a907736c..db264a8d6 100644
+--- a/drivers/mmc/core/Makefile
++++ b/drivers/mmc/core/Makefile
+@@ -8,7 +8,7 @@ mmc_core-y			:= core.o bus.o host.o \
+ 				   mmc.o mmc_ops.o sd.o sd_ops.o \
+ 				   sdio.o sdio_ops.o sdio_bus.o \
+ 				   sdio_cis.o sdio_io.o sdio_irq.o \
+-				   slot-gpio.o regulator.o
++				   slot-gpio.o regulator.o mmc_ext.o
+ mmc_core-$(CONFIG_OF)		+= pwrseq.o
+ obj-$(CONFIG_PWRSEQ_SIMPLE)	+= pwrseq_simple.o
+ obj-$(CONFIG_PWRSEQ_SD8787)	+= pwrseq_sd8787.o
+diff --git a/drivers/mmc/core/core.c b/drivers/mmc/core/core.c
+index 8d86e6f5f..eeddda30f 100644
+--- a/drivers/mmc/core/core.c
++++ b/drivers/mmc/core/core.c
+@@ -2318,6 +2318,9 @@ static int __init mmc_init(void)
+ 	if (ret)
+ 		goto unregister_host_class;
+ 
++    mmc_resume_init();
++    wb_emmc_logging_sysfs_init();
++
+ 	return 0;
+ 
+ unregister_host_class:
+@@ -2329,6 +2332,8 @@ static int __init mmc_init(void)
+ 
+ static void __exit mmc_exit(void)
+ {
++    mmc_resume_destroy();
++    wb_emmc_logging_sysfs_exit();
+ 	sdio_unregister_bus();
+ 	mmc_unregister_host_class();
+ 	mmc_unregister_bus();
+diff --git a/drivers/mmc/core/core.h b/drivers/mmc/core/core.h
+index f5f3f623e..be1db5ece 100644
+--- a/drivers/mmc/core/core.h
++++ b/drivers/mmc/core/core.h
+@@ -96,6 +96,12 @@ int mmc_execute_tuning(struct mmc_card *card);
+ int mmc_hs200_to_hs400(struct mmc_card *card);
+ int mmc_hs400_to_hs200(struct mmc_card *card);
+ 
++extern int mmc_hw_reset_bsp(u32 dev_type, u32 slot_id);
++extern int mmc_resume_init(void);
++extern int mmc_resume_destroy(void);
++extern int wb_emmc_logging_sysfs_init(void);
++extern void wb_emmc_logging_sysfs_exit(void);
++
+ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq);
+ bool mmc_is_req_done(struct mmc_host *host, struct mmc_request *mrq);
+ 
+diff --git a/drivers/mmc/core/mmc.c b/drivers/mmc/core/mmc.c
+index d805f8450..1326db6c8 100644
+--- a/drivers/mmc/core/mmc.c
++++ b/drivers/mmc/core/mmc.c
+@@ -16,6 +16,7 @@
+ #include <linux/mmc/host.h>
+ #include <linux/mmc/card.h>
+ #include <linux/mmc/mmc.h>
++#include <linux/module.h>
+ 
+ #include "core.h"
+ #include "card.h"
+@@ -25,10 +26,15 @@
+ #include "quirks.h"
+ #include "sd_ops.h"
+ #include "pwrseq.h"
++#include "mmc_ext.h"
+ 
+ #define DEFAULT_CMD6_TIMEOUT_MS	500
+ #define MIN_CACHE_EN_TIMEOUT_MS 1600
+ #define CACHE_FLUSH_TIMEOUT_MS 30000 /* 30s */
++#define DEV_TYPE_MMC 1
++
++unsigned int emmc_resume_state = 0;
++module_param(emmc_resume_state, uint, S_IRUGO | S_IWUSR);
+ 
+ static const unsigned int tran_exp[] = {
+ 	10000,		100000,		1000000,	10000000,
+@@ -63,6 +69,12 @@ static const unsigned int taac_mant[] = {
+ 		__res & __mask;						\
+ 	})
+ 
++ATOMIC_NOTIFIER_HEAD(wb_emmc_logging_notifier_list);
++EXPORT_SYMBOL(wb_emmc_logging_notifier_list);
++storage_resume_record_log_t emmc_info;
++EXPORT_SYMBOL(emmc_info);
++static int emmc_err_count = 0;
++
+ /*
+  * Given the decoded CSD structure, decode the raw CID to our CID structure.
+  */
+@@ -665,6 +677,31 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
+ 	return err;
+ }
+ 
++/*
++ * Enable the function of mmc reset
++ */
++static void mmc_enable_ext_csd_rstn(struct mmc_card *card, u8 *ext_csd)
++{
++	u8 val;
++	int err;
++
++    pr_info("RST_N_FUNCTION register old_value: 0x%x \n",ext_csd[EXT_CSD_RST_N_FUNCTION]);
++	if (!(ext_csd[EXT_CSD_RST_N_FUNCTION] & EXT_CSD_RST_N_EN_MASK)) {
++
++		val = ((ext_csd[EXT_CSD_RST_N_FUNCTION] & (~EXT_CSD_RST_N_EN_MASK)) | EXT_CSD_RST_N_ENABLED);
++
++		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
++					EXT_CSD_RST_N_FUNCTION, val,
++					card->ext_csd.generic_cmd6_time);
++		if (err) {
++            pr_err("RST_N_FUNCTION set failed. \n");
++        } else {
++            pr_info("RST_N_FUNCTION set success, set_val: 0x%x \n", val);
++            ext_csd[EXT_CSD_RST_N_FUNCTION] = val;
++        }
++	}
++}
++
+ static int mmc_read_ext_csd(struct mmc_card *card)
+ {
+ 	u8 *ext_csd;
+@@ -697,6 +734,7 @@ static int mmc_read_ext_csd(struct mmc_card *card)
+ 
+ 		return err;
+ 	}
++    mmc_enable_ext_csd_rstn(card, ext_csd);
+ 
+ 	err = mmc_decode_ext_csd(card, ext_csd);
+ 	kfree(ext_csd);
+@@ -1751,7 +1789,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 		if (err && err != -EBADMSG)
+ 			goto free_card;
+ 	}
+-
++/* fix bug1012291 */
++#if 0
+ 	/*
+ 	 * Enable power_off_notification byte in the ext_csd register
+ 	 */
+@@ -1770,7 +1809,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 		if (!err)
+ 			card->ext_csd.power_off_notification = EXT_CSD_POWER_ON;
+ 	}
+-
++#endif
+ 	/* set erase_arg */
+ 	if (mmc_can_discard(card))
+ 		card->erase_arg = MMC_DISCARD_ARG;
+@@ -1830,7 +1869,8 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 			card->ext_csd.hpi_en = 1;
+ 		}
+ 	}
+-
++/* fix bug 1012291 */
++#if 0
+ 	/*
+ 	 * If cache size is higher than 0, this indicates the existence of cache
+ 	 * and it can be turned on. Note that some eMMCs from Micron has been
+@@ -1858,7 +1898,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
+ 			card->ext_csd.cache_ctrl = 1;
+ 		}
+ 	}
+-
++#endif
+ 	/*
+ 	 * Enable Command Queue if supported. Note that Packed Commands cannot
+ 	 * be used with Command Queue.
+@@ -2220,6 +2260,7 @@ static int mmc_can_reset(struct mmc_card *card)
+ static int _mmc_hw_reset(struct mmc_host *host)
+ {
+ 	struct mmc_card *card = host->card;
++    int ret, logth = 0;
+ 
+ 	/*
+ 	 * In the case of recovery, we can't expect flushing the cache to work
+@@ -2232,6 +2273,7 @@ static int _mmc_hw_reset(struct mmc_host *host)
+ 		/* If the card accept RST_n signal, send it. */
+ 		mmc_set_clock(host, host->f_init);
+ 		host->ops->hw_reset(host);
++        mmc_hw_reset_bsp(DEV_TYPE_MMC, host->index);
+ 		/* Set initial state and call mmc_set_ios */
+ 		mmc_set_initial_state(host);
+ 	} else {
+@@ -2239,7 +2281,21 @@ static int _mmc_hw_reset(struct mmc_host *host)
+ 		mmc_power_cycle(host, card->ocr);
+ 		mmc_pwrseq_reset(host);
+ 	}
+-	return mmc_init_card(host, card->ocr, card);
++
++    logth = strlen(emmc_info.resume_pri_logging);
++    ret = mmc_init_card(host, card->ocr, card);
++	if (!ret) {
++	    pr_warn("mmc: resume succeed. ret: %d \n",ret);
++        snprintf(emmc_info.resume_pri_logging + logth, RESUME_PRINTF_LOG_LENGTH_MAX - logth -1, "mmc: resume succeed. \n");
++	} else {
++	    pr_warn("mmc: resume failed. ret: %d \n",ret);
++        snprintf(emmc_info.resume_pri_logging + logth, RESUME_PRINTF_LOG_LENGTH_MAX - logth -1, "mmc: resume failed. \n");
++        emmc_resume_state++;
++	}
++
++    atomic_notifier_call_chain(&wb_emmc_logging_notifier_list, emmc_err_count, (void *)&emmc_info);
++    emmc_err_count++;
++	return ret;
+ }
+ 
+ static const struct mmc_bus_ops mmc_ops = {
+diff --git a/drivers/mmc/core/mmc_ext.c b/drivers/mmc/core/mmc_ext.c
+new file mode 100644
+index 000000000..5fde03109
+--- /dev/null
++++ b/drivers/mmc/core/mmc_ext.c
+@@ -0,0 +1,301 @@
++/*
++ *  mmc-ext.c - mmc ext routines module
++ *
++ *  created by: 
++ *
++ */
++/*
++ * mmc-ext.c -  mmc ext routines module:
++ *                    1) low-level driver operations
++ *                    2) bsp module extern operations
++ *                    3) diagnose cdev driver operations
++ *
++ * Copyright 2022
++ *
++ * This file is released under the GPLv2.
++*/
++
++#include <linux/kernel.h>
++#include <linux/io.h>
++#include "mmc_ext.h"
++extern storage_resume_record_log_t emmc_info;
++extern struct atomic_notifier_head wb_emmc_logging_notifier_list;
++
++typedef int (*mmc_reset_func_t)(u32, u32);
++
++struct mmc_bsp_operations {
++	mmc_reset_func_t   bsp_power_reset_fn;
++};
++
++struct mmc_bsp_operations mmc_bsp_ops;
++
++#define MMC_BSP_OPS_POWER_RESET (mmc_bsp_ops.bsp_power_reset_fn)
++
++/**
++ *	mmc_resume_init
++ *	int
++ *
++ *	bsp call to init
++ *
++ *	RETURNS:
++ *	0 on success, others on failure.
++ */
++int mmc_resume_init(void)
++{
++	printk(KERN_DEBUG "mmc resume init! \n");
++
++	MMC_BSP_OPS_POWER_RESET = NULL;
++
++	return 0;
++}
++
++EXPORT_SYMBOL(mmc_resume_init);
++/**
++ *	mmc_resume_destroy
++ *	int
++ *
++ *	bsp call to destory
++ *
++ *	RETURNS:
++ *	0 on success, others on failure.
++ */
++int mmc_resume_destroy(void)
++{
++	printk(KERN_DEBUG "destroy mmc resume interface! \n");
++
++	MMC_BSP_OPS_POWER_RESET = NULL;
++
++	return 0;
++}
++
++EXPORT_SYMBOL(mmc_resume_destroy);
++
++/**
++ *	sdchi_mmc_power_reset
++ *	void
++ *
++ *	mmc interface for emmc power reset
++ *
++ *	RETURNS:
++ *	0 on success, others on failure.
++ */
++int mmc_hw_reset_bsp(u32 dev_type, u32 slot_id)
++{
++	int rc = 0;
++	mmc_reset_func_t bsp_reset;
++    int logth = 0;
++
++	printk(KERN_DEBUG "mmc: bsp reset start.\n");
++    emmc_info.power_reset_num++;
++    memset(emmc_info.resume_pri_logging, 0, RESUME_PRINTF_LOG_LENGTH_MAX);
++	bsp_reset = MMC_BSP_OPS_POWER_RESET;
++
++	if (NULL != bsp_reset) {
++		rc = bsp_reset(dev_type, slot_id);
++	} else {
++		printk(KERN_DEBUG "mmc: the interface of emmc-resume is not registered! \n");
++        logth = strlen(emmc_info.resume_pri_logging);
++        snprintf(emmc_info.resume_pri_logging + logth, RESUME_PRINTF_LOG_LENGTH_MAX - logth -1,
++                    "mmc: the interface of emmc-resume is not registered! \n");
++		rc = -99;
++	}
++
++	if (rc != 0) {
++        logth = strlen(emmc_info.resume_pri_logging);
++		printk(KERN_DEBUG "mmc: bsp reset failed.\n");
++        snprintf(emmc_info.resume_pri_logging + logth, RESUME_PRINTF_LOG_LENGTH_MAX - logth -1,
++                                                        "mmc: bsp reset failed.\n");
++	} else {
++		printk(KERN_DEBUG "mmc: bsp reset succeed.\n");
++        logth = strlen(emmc_info.resume_pri_logging);
++        snprintf(emmc_info.resume_pri_logging + logth, RESUME_PRINTF_LOG_LENGTH_MAX - logth -1,
++                                                        "mmc: bsp reset succeed.\n");
++	}
++
++	return rc;
++}
++
++EXPORT_SYMBOL(mmc_hw_reset_bsp);
++
++/**
++ *	mmc_resume_register
++ *	@pwr_reset: reset_handle
++ *
++ *	bsp call to regist  reset fn
++ *
++ *	RETURNS:
++ *	0 on success, others on failure.
++ */
++int mmc_resume_register(mmc_reset_func_t reset_handle)
++{
++	printk(KERN_DEBUG "bsp register power_reset_handle!\n");
++
++	MMC_BSP_OPS_POWER_RESET = reset_handle;
++
++	return 0;
++}
++
++EXPORT_SYMBOL(mmc_resume_register);
++/**
++ *	mmc_resume_unregister
++ *	int
++ *
++ *	bsp call to destory
++ *
++ *	RETURNS:
++ *	0 on success, others on failure.
++ */
++int mmc_resume_unregister(void)
++{
++	MMC_BSP_OPS_POWER_RESET = NULL;
++
++	printk(KERN_DEBUG "unregister mmc resume interface! \n");
++
++	return 0;
++}
++
++EXPORT_SYMBOL(mmc_resume_unregister);
++
++static storage_resume_record_log_list_t record_info;
++void emmc_get_current_time(storage_resume_record_log_t *time_info);
++
++static int wb_emmc_notifier(struct notifier_block *nb, unsigned long val, void *data)
++{
++    storage_resume_record_log_t *tmp_info = (storage_resume_record_log_t *)data;
++    int i;
++
++    i = val % RESUME_RECORD_INFO_MAX_STORE;
++
++    emmc_get_current_time(&record_info.resume_record_info[i]);
++    record_info.resume_record_info[i].init_reset_num = tmp_info->init_reset_num;
++    record_info.resume_record_info[i].ata_comreset_num = tmp_info->ata_comreset_num;
++    record_info.resume_record_info[i].power_reset_num = tmp_info->power_reset_num;
++    memcpy(record_info.resume_record_info[i].resume_pri_logging, tmp_info->resume_pri_logging,
++                                RESUME_PRINTF_LOG_LENGTH_MAX - 1);
++
++    return NOTIFY_DONE;
++}
++
++static struct notifier_block wb_emmc_dec = {
++    .notifier_call  = wb_emmc_notifier,
++    .priority       = INT_MAX,
++};
++
++static void wb_emmc_error_notifier_register(void)
++{
++    atomic_notifier_chain_register(&wb_emmc_logging_notifier_list, &wb_emmc_dec);
++
++}
++
++static void wb_emmc_error_notifier_unregister(void)
++{
++    atomic_notifier_chain_unregister(&wb_emmc_logging_notifier_list, &wb_emmc_dec);
++
++}
++
++static ssize_t emmc_logging_show(struct kobject *kobj, struct kobj_attribute *attr,char *buf)
++{
++    char timebuf[RESUME_PRINTF_LOG_LENGTH_MAX];
++    int i = 0, lenth = 0, logth = 0;
++
++    for(i = 0; i < RESUME_RECORD_INFO_MAX_STORE; i++) {
++        if (record_info.resume_record_info[i].resume_pri_logging[0] != 0) {
++            memset(timebuf, 0, RESUME_PRINTF_LOG_LENGTH_MAX);
++            lenth = snprintf(timebuf, RESUME_PRINTF_LOG_LENGTH_MAX - 1, "== %ld-%d-%d-%d:%d:%d ==\n",
++                        record_info.resume_record_info[i].timestamp.tm_year,
++                        record_info.resume_record_info[i].timestamp.tm_mon,
++                        record_info.resume_record_info[i].timestamp.tm_mday,
++                        record_info.resume_record_info[i].timestamp.tm_hour,
++                        record_info.resume_record_info[i].timestamp.tm_min,
++                        record_info.resume_record_info[i].timestamp.tm_sec);
++
++            lenth += snprintf(timebuf + lenth, RESUME_PRINTF_LOG_LENGTH_MAX - lenth - 1,
++                    "Storage Resume Count:\ninit_reset_num   comreset_num   power_reset_num \n      %-10d     %-15d     %-15d\n",
++                            record_info.resume_record_info[i].init_reset_num,
++                            record_info.resume_record_info[i].ata_comreset_num,
++                            record_info.resume_record_info[i].power_reset_num);
++            lenth += snprintf(timebuf + lenth, RESUME_PRINTF_LOG_LENGTH_MAX - lenth - 1, "Resume Logging Detail:\n%s\n",
++                            record_info.resume_record_info[i].resume_pri_logging);
++
++            logth += snprintf(buf + logth, PAGE_SIZE - logth - 1, "%s", timebuf);
++        }
++    }
++
++	return logth;
++}
++
++
++static struct kobj_attribute err_logging_attribute        = __ATTR(err_logging, S_IRUGO, emmc_logging_show, NULL);
++
++static struct attribute *emmc_attrs[] = {
++		&err_logging_attribute.attr,
++		NULL, /* need to NULL terminate the list of attributes */
++};
++
++static struct attribute_group attr_group = {
++.attrs = emmc_attrs,
++};
++
++static struct kobject *emmc_kobj;
++
++int wb_emmc_logging_sysfs_init(void)
++{
++	int retval;
++
++	/*
++	  * Create a simple kobject with the name of "kobject_example",
++	  * located under /sys/kernel/
++	  *
++	  * As this is a simple directory, no uevent will be sent to
++	  * userspace.  That is why this function should not be used for
++	  * any type of dynamic kobjects, where the name and number are
++	  * not known ahead of time.
++	*/
++	emmc_kobj = kobject_create_and_add("emmc_log", kernel_kobj);
++	if (!emmc_kobj) {
++        pr_err("creat emmc_log kobj fail\n");
++	    return -ENOMEM;
++    }
++
++	/* Create the files associated with this kobject */
++	retval = sysfs_create_group(emmc_kobj, &attr_group);
++	if (retval) {
++        pr_err("creat emmc_log sysfs fail, ret: %d\n", retval);
++	    kobject_put(emmc_kobj);
++        return retval;
++    }
++
++	wb_emmc_error_notifier_register();
++    pr_info("emmc logging sysfs init success\n");
++	return retval;
++}
++
++EXPORT_SYMBOL(wb_emmc_logging_sysfs_init);
++
++
++void wb_emmc_logging_sysfs_exit(void)
++{
++	kobject_put(emmc_kobj);
++	wb_emmc_error_notifier_unregister();
++    pr_info("emmc logging sysfs exit success\n");
++}
++EXPORT_SYMBOL(wb_emmc_logging_sysfs_exit);
++
++void emmc_get_current_time(storage_resume_record_log_t *time_info)
++{
++    struct timespec64 tv;
++    struct rtc_time tm;
++
++    ktime_get_real_ts64(&tv);
++    rtc_time64_to_tm(tv.tv_sec, &tm);
++
++    time_info->timestamp.tm_year = tm.tm_year + 1900;
++    time_info->timestamp.tm_mon = tm.tm_mon + 1;
++    time_info->timestamp.tm_mday = tm.tm_mday;
++    time_info->timestamp.tm_hour = tm.tm_hour;
++    time_info->timestamp.tm_min = tm.tm_min;
++    time_info->timestamp.tm_sec = tm.tm_sec;
++
++    return;
++}
++EXPORT_SYMBOL(emmc_get_current_time);
+diff --git a/drivers/mmc/core/mmc_ext.h b/drivers/mmc/core/mmc_ext.h
+new file mode 100644
+index 000000000..1ffdc29df
+--- /dev/null
++++ b/drivers/mmc/core/mmc_ext.h
+@@ -0,0 +1,46 @@
++/*
++ *  mmc_ext.h - extern for ATA
++ *
++ *  Copyright 2021-2030 Ruijie, Inc.  All rights reserved.
++ *  Original Author:  zhangxuelei1@ruijie.com.cn, 2021-09-20
++ *
++ *  ATA ext module provides .
++ *
++ */
++
++#ifndef __STORAGE_EXT_H__
++#define __STORAGE_EXT_H__
++
++#include <linux/kernel.h>
++#include <linux/gfp.h>
++#include <linux/module.h>
++#include <linux/wait.h>
++#include <linux/delay.h>
++#include <linux/semaphore.h>
++#include <linux/sched.h>
++#include <linux/cdev.h>
++#include <linux/types.h>
++#include <linux/kdev_t.h>
++#include <linux/device.h>
++#include <linux/ioctl.h>
++#include <linux/of.h>
++#include <linux/rtc.h>
++#include <linux/time.h>
++
++#define RESUME_PRINTF_LOG_LENGTH_MAX        (1024)
++#define RESUME_RECORD_INFO_MAX_STORE        (5)
++
++typedef struct storage_resume_record_log {
++    struct tm timestamp;
++    unsigned int init_reset_num;    /* record ata or eusb inital resume */
++    unsigned int ata_comreset_num;  /* record ata comreset logging */
++    unsigned int power_reset_num;   /* record emmc's/ata's/eusb's power reset logging */
++    char resume_pri_logging[RESUME_PRINTF_LOG_LENGTH_MAX];
++}storage_resume_record_log_t;
++
++typedef struct storage_resume_record_log_list{
++    storage_resume_record_log_t resume_record_info[5];
++    unsigned int cur_index;     /* array index */
++}storage_resume_record_log_list_t;
++
++#endif /* __STORAGE_EXT_H__ */
+-- 
+2.25.1
+

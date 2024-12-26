@@ -1,0 +1,26 @@
+From 1f36d1ea29ca10abc8c20aa85e0e1ccf318b4ee9 Mon Sep 17 00:00:00 2001
+From: zhouyongtao <zhouyongtao@ruijie.com.cn>
+Date: Wed, 10 Jul 2024 14:57:48 +0800
+Subject: [PATCH 6/9] Summary:ast26 enable ecc
+
+BranchName:facebook-meta-whitebox-master
+CAFID:N202407107981
+BUGID:
+WorkPackageName:bsp
+The ratio of self research code(0~1):1
+---
+ configs/wb-ast2600_defconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/configs/wb-ast2600_defconfig b/configs/wb-ast2600_defconfig
+index dd57623a..47f5a7a7 100644
+--- a/configs/wb-ast2600_defconfig
++++ b/configs/wb-ast2600_defconfig
+@@ -97,3 +97,4 @@ CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
+ CONFIG_PHY_FIXED=y
+ CONFIG_PHY_NCSI=y
+ CONFIG_CMD_NCSI=y
++CONFIG_ASPEED_ECC=y
+-- 
+2.25.1
+

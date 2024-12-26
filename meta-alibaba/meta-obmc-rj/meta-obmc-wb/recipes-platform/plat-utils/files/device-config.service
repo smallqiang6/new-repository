@@ -1,0 +1,10 @@
+[Unit]
+Description=Get product name and config epprom & hwmon
+After=init-platform.service
+
+[Service]
+ExecStartPre=/usr/bin/env fw_version.sh
+ExecStart=/usr/bin/env device_config.sh
+
+[Install]
+WantedBy=sonic.target

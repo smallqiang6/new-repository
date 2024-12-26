@@ -1,0 +1,1960 @@
+diff --git a/Makefile b/Makefile
+index dca9ab7..3244346 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ # Makefile for memtester by Charles Cazabon.
+ #
+ # Copyright (C) 1999 Simon Kirby.
+-# Copyright (C) 1999-2020 Charles Cazabon.
++# Copyright (C) 1999-2009 Charles Cazabon.
+ # Licensed under the GNU General Public License version 2.  See the file
+ # COPYING for details.
+ #
+@@ -10,76 +10,17 @@
+ # You don't need to edit these; change the contents of the conf-cc and conf-ld
+ # files if you need to change the compile/link commands.  See the README for
+ # more information.
+-CC			= $(shell head -n 1 conf-cc)
+-LD			= $(shell head -n 1 conf-ld)
+ 
+-SOURCES		= memtester.c tests.c
+-OBJECTS		= $(SOURCES:.c=.o)
+-HEADERS		= memtester.h
+-TARGETS     = *.o compile load auto-ccld.sh find-systype make-compile make-load systype extra-libs
+-INSTALLPATH	= /usr/local
++CC?=gcc
++CFLAGS+= -g -o2 -Wall -DPOSIX -D_POSIX_C_SOURCE=200809L -D_FILE_OFFSET_BITS=64 -DTEST_NARROW_WRITES -c
++LDFLAGS=
++LIBS=-lpthread
+ 
+-#
+-# Targets
+-#
+-all: memtester
+-
+-install: all
+-	mkdir -m 755 -p $(INSTALLPATH)/bin
+-	install -m 755 memtester $(INSTALLPATH)/bin/
+-	mkdir -m 755 -p $(INSTALLPATH)/man/man8
+-	gzip -c memtester.8 >memtester.8.gz ; install -m 644 memtester.8.gz $(INSTALLPATH)/man/man8/
+-
+-auto-ccld.sh: \
+-conf-cc conf-ld warn-auto.sh
+-	( cat warn-auto.sh; \
+-	echo CC=\'`head -n 1 conf-cc`\'; \
+-	echo LD=\'`head -n 1 conf-ld`\' \
+-	) > auto-ccld.sh
+-
+-compile: \
+-make-compile warn-auto.sh systype
+-	( cat warn-auto.sh; ./make-compile "`cat systype`" ) > \
+-	compile
+-	chmod 755 compile
+-
+-find-systype: \
+-find-systype.sh auto-ccld.sh
+-	cat auto-ccld.sh find-systype.sh > find-systype
+-	chmod 755 find-systype
+-
+-make-compile: \
+-make-compile.sh auto-ccld.sh
+-	cat auto-ccld.sh make-compile.sh > make-compile
+-	chmod 755 make-compile
++memtester: ft_ddr_test.o ruijie_tests.o tests.o memtester.o
++	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+ 
+-make-load: \
+-make-load.sh auto-ccld.sh
+-	cat auto-ccld.sh make-load.sh > make-load
+-	chmod 755 make-load
+-
+-systype: \
+-find-systype trycpp.c
+-	./find-systype > systype
+-
+-extra-libs: \
+-extra-libs.sh systype
+-	./extra-libs.sh "`cat systype`" >extra-libs
+-
+-load: \
+-make-load warn-auto.sh systype
+-	( cat warn-auto.sh; ./make-load "`cat systype`" ) > load
+-	chmod 755 load
++%.o: %.c
++	$(CC) $(CFLAGS) -c -o $@ $^
+ 
+ clean:
+-	rm -f memtester $(TARGETS) $(OBJECTS) core
+-
+-memtester: \
+-$(OBJECTS) memtester.c tests.h tests.c tests.h conf-cc Makefile load extra-libs
+-	./load memtester tests.o `cat extra-libs`
+-
+-memtester.o: memtester.c tests.h conf-cc Makefile compile
+-	./compile memtester.c
+-
+-tests.o: tests.c tests.h conf-cc Makefile compile
+-	./compile tests.c
++	-rm *.o memtester
+diff --git a/ft_ddr_test.c b/ft_ddr_test.c
+new file mode 100644
+index 0000000..6763438
+--- /dev/null
++++ b/ft_ddr_test.c
+@@ -0,0 +1,1583 @@
++/*
++ * $Id: ft_ddr_test.c,v 1.0.0.0 2009/08/05 17:37:52 xiezb Exp $
++ * Copyright (C)2009-2009 锐捷网络.  All rights reserved.
++ */
++
++/*
++ * ft_ddr_test.c
++ * Original Author:  xiezb@ruijie.com.cn, 2009-8-5
++ * 内存测试算法实现函数
++ *
++ * History
++ *
++ */
++#include<stdio.h>
++#include<string.h>
++#include "ft_ddr_test.h"
++
++#undef USE_DMA  /* 不开启DMA */
++typedef unsigned int uint32;
++typedef uint32 volatile * volatile uvpv;
++
++#define  MEMORY_SIZE_1G        (1024 * 1024 * 1024ul)
++
++volatile uint32 *volatile pp = 0;
++volatile uint32  p1 = 0, p2 = 0, p0 = 0;
++int     fail = 0;
++int     segs = 0;
++struct vars variables = { };
++struct vars *v = &variables;
++/* dma_tx_data_t g_dma_tx_data[MAX_DMA_CHAN][NUM_LINK_DESC]; */
++static unsigned int SEED_X = 521288629;
++static unsigned int SEED_Y = 362436069;
++
++/* dma传输时的内存块大小 */
++int blk_size_array[BLK_SIZE_NUM_MAX] = {
++    0x2000000, /* 32MB */
++    0x1800000, /* 24MB */
++    0x1000000, /* 16MB */
++    0xA00000,  /* 10MB */
++    0x800000,  /* 8MB */
++    0x600000,  /* 6MB */
++    0x500000,  /* 5MB */
++    0x300000,  /* 3MB */
++    0x200000,  /* 2MB */
++};
++
++#if 0
++extern int dma_mov_addr(int engine, int from_addr, int to_addr, int size);
++#endif
++static int ddr_half_mov_inv_random_pat(char *desc);
++static int ddr_mov_inv_random_pat(char *desc);
++static int ddr_mov_inv_0_1(char *desc);
++static int ddr_mov_inv_8_pat(char *desc);
++static int ddr_mov_inv_32_pat(char *desc);
++static int ddr_mod20_random_pat(char *desc);
++static int ddr_mod20_0_1_pat(char *desc);
++static int ddr_mod20_8_pat(char *desc);
++static int ddr_addr_walking(char *desc);
++static int ddr_march_c(char *desc);
++static int ddr_march_g(char *desc);
++static int ddr_galloping(char *desc);
++static int ddr_column_operate(char *desc);
++static int ddr_swap_blocks(char *desc);
++
++ft_ddr_test_interface_t ft_ddr_test_fun[TETS_TOTAL_NUMBER] = {
++    {0, ddr_half_mov_inv_random_pat, "Semi-moving inversion - random number test"},     /* 半移动反转-随机数测试，不拷机 */
++    {1, ddr_mov_inv_random_pat, "Moving inversion - random number test"},            /* 移动反转-随机数测试  */
++    {0, ddr_mov_inv_0_1, "Moving inversion - 0&1 test"},                      /* 移动反转-0&1测试，不拷机 */
++    {1, ddr_mov_inv_8_pat, "Moving inversion - 8bit test"},                   /* 移动反转-8bit测试 */
++    {0, ddr_mov_inv_32_pat, "Moving inversion - 32bit test"},                 /* 移动反转-32bit测试，不拷机 */
++    {0, ddr_mod20_random_pat, "Modulo 20 - random number test"},                  /* 模20-随机数测试，不拷机  */
++    {1, ddr_mod20_0_1_pat, "Modulo 20 - 0&1 test"},                        /* 模20-0&1测试*/
++    {1, ddr_mod20_8_pat, "Modulo 20 - 8bit test"},                         /* 模20-8bit测试 */
++    {1, ddr_addr_walking, "Walking 1 address test"},                          /* 走1地址测试*/
++    {0, ddr_march_c, "March C test"},                               /* March C测试，不拷机 */
++    {1, ddr_march_g, "March G test"},                               /* March G测试 */ 
++    {1, ddr_galloping, "Galloping test"},                          /* Galloping测试 */
++    {1, ddr_column_operate, "Column operate test"},                 /* Column operate测试 */ 
++//    {0, ddr_swap_blocks, " block move测试"},                       /* block move测试，不拷机  */
++};
++
++static inline ul roundup(ul value, ul mask)
++{
++    return (value + mask) & ~mask;
++}
++
++void rand_seed(unsigned int seed1, unsigned int seed2)
++{
++    if (seed1)
++        SEED_X = seed1;         /* use default seeds if parameter is 0 */
++    if (seed2)
++        SEED_Y = seed2;
++}
++
++static inline unsigned int ft_rand()
++{
++    static unsigned int a = 18000, b = 30903;
++
++    SEED_X = a * (SEED_X & 65535) + (SEED_X >> 16);
++    SEED_Y = b * (SEED_Y & 65535) + (SEED_Y >> 16);
++
++    return ((SEED_X << 16) + (SEED_Y & 65535));
++}
++
++static int fd_check_overflow(uvpv *pe, uint32 volatile * volatile end, int *done)
++{
++    /* Check for overflow */
++    if (*pe + SPINSZ > *pe) {
++        *pe += SPINSZ;
++    } else {
++        *pe = end;
++    }
++    if (*pe >= end) {
++        *pe = end;
++        (*done)++;
++    }
++    if (pp >= *pe) {
++        return 1;
++    }
++
++    return 0;
++}
++
++static int fd_check_underflow(uvpv *pe, uvpv start, int *done)
++{
++    /* Check for underflow */
++    if (*pe - SPINSZ < *pe) {
++        *pe -= SPINSZ;
++    } else {
++        *pe = start;
++    }
++    if (*pe <= start) {
++        *pe = start;
++        (*done)++;
++    }
++    if (pp == *pe) {
++        return 1;
++    }
++
++    return 0;
++}
++
++/**
++ * addrress_walking
++ *
++ * 使用"地址测试"算法
++ * 要写入数据的地址变换规则如下:
++ * address = 初始地址 | (mask << 1)
++ *
++ * 无返回值
++ */
++static int addrress_walking(char *desc)
++{
++    int     i, j, k;
++    uvpv pt, end;
++    uint32 mask, bank;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    /* Test the global address bits */
++    for (p1 = 0, j = 0; j < 2; j++) {
++        /* 设置初始地址0x20000对齐 */
++        pp = (uint32 *)roundup((ul)v->map[0].start, 0x1ffff);
++        *pp = p1;
++
++        /* Now write pattern compliment */
++        p1 = ~p1;
++        end = v->map[segs - 1].end;
++        for (i = 0; i < 1000; i++) {
++            mask = 4;
++            do {
++                pt = (uint32 *) ((ul) pp | mask);
++                if (pt == pp) {
++                    mask = mask << 1;
++                    continue;
++                }
++                if (pt >= end) {
++                    break;
++                }
++                *pt = p1;
++                if (*pp != ~p1) {
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, ~p1, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                mask = mask << 1;
++            } while (mask);
++        }
++        //FT_DDR_SHOW();
++    }
++
++    /* Now check the address bits in each bank
++     * If we have more than 8mb of memory then the bank size must be
++     * bigger than 256k.  If so use 1mb for the bank size.
++     */
++    if (v->pmap[v->msegs - 1].end > (0x800000 >> 12)) {
++        bank = 0x100000;
++    } else {
++        bank = 0x40000;
++    }
++
++    for (p1 = 0, k = 0; k < 2; k++) {
++        for (j = 0; j < segs; j++) {
++            pp = v->map[j].start;
++            /* 设置初始地址256k对齐 */
++            pp = (uint32 *) roundup((ul) pp, bank - 1);
++            end = v->map[j].end;
++            while (pp < end) {
++                *pp = p1;
++                p1 = ~p1;
++                for (i = 0; i < 200; i++) {
++                    mask = 4;
++                    do {
++                        pt = (uint32 *)((ul) pp | mask);
++                        if (pt == pp) {
++                            mask = mask << 1;
++                            continue;
++                        }
++                        if (pt >= end) {
++                            break;
++                        }
++                        *pt = p1;
++                        if (*pp != ~p1) {
++                            sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, ~p1, *pp);
++                            fail = 1;
++                            return FT_DDR_ERR;
++                        }
++                        mask = mask << 1;
++                    } while (mask);
++                }
++                if (pp + bank > pp) {
++                    pp += bank;
++                } else {
++                    pp = end;
++                }
++                p1 = ~p1;
++            }
++        }
++        p1 = ~p1;
++        //FT_DDR_SHOW();
++    }
++
++    return GRTD_SUCCESS;
++}
++
++static void fd_write_value_low_to_high(uint32 write)
++{
++    int     j, done;
++    uint32 volatile * volatile pe;
++    uint32 volatile * volatile start;
++    uint32 volatile * volatile end;
++
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++
++            for (; pp < pe; pp++) {
++                *pp = write;
++            }
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++}
++
++static int fd_write_value_low_to_high_check(uint32 check, uint32 write, int is_write, char * desc)
++{
++    int     j, done;
++    uint32 volatile * volatile pe;
++    uint32 volatile * volatile start;
++    uint32 volatile * volatile end;
++    /* 验证写入数据，从低地址到高地址，往测试内存区域写入p2值 */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++
++            for (; pp < pe; pp++) {
++
++                if (*pp != check) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                if (is_write == 1) {
++                    *pp = write;
++                } else if (is_write == 2) {
++                    *pp = write;
++                    *pp = check;
++                }
++            }
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    return FT_DDR_SUCCESS;
++}
++
++static int fd_write_value_low_to_high_check_two(uint32 check, uint32 write, int is_write, char * desc)
++{
++    int     j, done;
++    uint32 volatile * volatile pe;
++    uint32 volatile * volatile start;
++    uint32 volatile * volatile end;
++
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++            for (; pp < pe; pp++) {
++                if (*pp != check) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                *pp = write;
++                if (*pp != write) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, write, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, write, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                *pp = check;
++                if (*pp != check) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                *pp = write;
++            }
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    return FT_DDR_SUCCESS;
++}
++
++static int fd_write_value_high_to_low_check(uint32 check, uint32 write, int is_write, char * desc)
++{
++    int     j, done;
++    uvpv pe,start,end;
++
++    /* 验证写入数据，从高地址到低地址，往测试内存区域写入p1值 */
++    for (j = segs - 1; j >= 0; j--) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = end - 1;
++        pp = end - 1;
++        done = 0;
++        do {
++            /* Check for underflow */
++            if (fd_check_underflow(&pe, start, &done)) {
++                break;
++            }
++
++            do {
++                if (*pp != check) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, check, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++                if (is_write == 1) {
++                    *pp = write;
++                } else if (is_write == 2) {
++                    *pp = write;
++                    *pp = check;
++                } else if (is_write == 3) {
++                    *pp = write;
++                    *pp = check;
++                    *pp = write;
++                }
++            } while (pp-- > pe);
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    return FT_DDR_SUCCESS;
++}
++
++/**
++ * moving_inversions
++ * @iter: 重复次数
++ * @p1: 写入的数据pattern1
++ * @p2: 写入的数据pattern2
++ *
++ * 使用"移动反转"算法，写内存地址从低地址到高地址及从高地址到地址；
++ * 先往测试内存区域写入p1数据格式，并检验写入数据是否正确；
++ * 再往测试内存区域写入~p1数据格式，并检验写入数据是否正确；
++ *
++ * 成功返回0；失败返回1
++ */
++static int moving_inversions(char * desc, int iter, uint32 p1, uint32 p2)
++{
++    int i;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "Iter:%d P1:0x%x P2:0x%x.\n", iter, p1, p2);
++    /* 从低地址到高地址，往测试内存区域写入p1值  */
++    fd_write_value_low_to_high(p1);
++
++    for (i = 0; i < iter; i++) {
++         /* 验证写入数据，从低地址到高地址，往测试内存区域写入p2值 */
++        if (fd_write_value_low_to_high_check(p1, p2, 1, desc)) {
++            return FT_DDR_ERR;
++        }
++
++        /* 验证写入数据，从高地址到低地址，往测试内存区域写入p1值 */
++        if (fd_write_value_high_to_low_check(p2, p1, 1, desc)) {
++            return FT_DDR_ERR;
++        }
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * moving_inversions32
++ * @iter: 重复次数
++ * @p1: 第一次写内存时的数据pattern
++ * @low_pattern: 低地址到高地址写内存时的初始数据pattern
++ * @high_pattern: 高地址到低地址写内存时的初始数据pattern
++ * @sval: 每次修改写入数据pattern需要或上的值
++ * @offset: 第一次写内存时的比特偏移，low_pattern = p1 >> offset
++ *
++ * 采用"移动反转-32bit"算法，该算法以32次写操作为一循环，每次写操
++ * 作之后，对于低地址到高地址写内存，写入的数据pattern需要左移1比特；
++ * 对于高地址到低地址写内存，写入的数据pattern需要右移1比特。
++ *
++ * 成功返回0；失败返回1
++ */
++static int moving_inversions32(char *desc, int iter, uint32 p1, uint32 low_pattern, uint32 high_pattern, int sval, int offset)
++{
++    int     i, j, k = 0, done;
++    uint32 volatile * volatile pe;
++    uint32 volatile * volatile start;
++    uint32 volatile * volatile end;
++    uint32   pattern = 0;
++    uint32   p3 = sval << 31;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "Iter:%d P1:0x%x low_pattern:0x%x high_pattern:0x%x sval:%d offset:%d.\n",
++    //                iter, p1, low_pattern, high_pattern, sval, offset);
++    /* 从低地址到高地址，往测试内存区域写入pattern值  */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        k = offset;
++        pattern = p1;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++            while (pp < pe) {
++                *pp = pattern;
++                if (++k >= 32) {
++                    pattern = low_pattern;
++                    k = 0;
++                } else {
++                    pattern = pattern << 1;
++                    pattern |= sval;
++                }
++                pp++;
++            }
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    for (i = 0; i < iter; i++) {
++        /* 验证写入数据，从低地址到高地址，往测试内存区域写入pattern值 */
++        for (j = 0; j < segs; j++) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pe = start;
++            pp = start;
++            done = 0;
++            k = offset;
++            pattern = p1;
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++
++                while (pp < pe) {
++                    if (*pp != pattern) {
++                        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, pattern, *pp);
++                        sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, pattern, *pp);
++                        fail = 1;
++                        return FT_DDR_ERR;
++                    }
++                    *pp = ~pattern;
++                    if (++k >= 32) {
++                        pattern = low_pattern;
++                        k = 0;
++                    } else {
++                        pattern = pattern << 1;
++                        pattern |= sval;
++                    }
++                    pp++;
++                }
++            } while (!done);
++            //FT_DDR_SHOW();
++        }
++
++        /* 验证写入数据，从高地址到低地址，往测试内存区域写入pattern值 */
++        pattern = low_pattern;
++        if (0 != (k = (k - 1) & 31)) {
++            pattern = (pattern << k);
++            if (sval)
++                pattern |= ((sval << k) - 1);
++        }
++        k++;
++        for (j = segs - 1; j >= 0; j--) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pp = end - 1;
++            pe = end - 1;
++            done = 0;
++            do {
++                /* Check for underflow */
++                if (fd_check_underflow(&pe, start, &done)) {
++                    break;
++                }
++
++                do {
++                    if (*pp != ~pattern) {
++                        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, ~pattern, *pp);
++                        sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, ~pattern, *pp);
++                        fail = 1;
++                        return FT_DDR_ERR;
++                    }
++                    *pp = pattern;
++                    if (--k <= 0) {
++                        pattern = high_pattern;
++                        k = 32;
++                    } else {
++                        pattern = pattern >> 1;
++                        pattern |= p3;
++                    }
++                } while (pp-- > pe);
++            } while (!done);
++            //FT_DDR_SHOW();
++        }
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * modtst
++ * @offset: 写P1值的偏移地址
++ * @iter: 写P2值重复次数
++ * @p1: 写入的数据1
++ * @p2: 写入的数据2
++ *
++ * 往测试内存区域中为20 * n + offset的偏移地址写入p1数据；往其它
++ * 偏移地址写入p2数据，重复iter次；检验20 * n + offset的偏移地址
++ * 写入的数据是否正确。
++ *
++ * 成功返回0；失败返回1
++ */
++static int modtst(char *desc, int offset, int iter, uint32 p1, uint32 p2)
++{
++    int     j, k, l, done;
++    uvpv pe,start,end;
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "offset:%d Iter:%d P1:0x%x p2:0x%x.\n", offset, iter, p1, p2);
++    /* 往测试内存区域中为20 * n + offset的偏移地址写入p1数据； */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = (uvpv )start;
++        pp = start + offset;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++
++            for (; pp < pe; pp += MOD_SZ) {
++                *pp = p1;
++            }
++
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    /* 往其它偏移地址写入p2数据，重复iter次； */
++    for (l = 0; l < iter; l++) {
++        for (j = 0; j < segs; j++) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pe = (uint32 *) start;
++            pp = start;
++            done = 0;
++            k = 0;
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++
++                for (; pp < pe; pp++) {
++                    if (k != offset) {
++                        *pp = p2;
++                    }
++                    if (++k > MOD_SZ - 1) {
++                        k = 0;
++                    }
++                }
++
++            } while (!done);
++            //FT_DDR_SHOW();
++        }
++    }
++
++    /* Now check every nth location */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = (uint32 *) start;
++        pp = start + offset;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++
++            for (; pp < pe; pp += MOD_SZ) {
++                if (*pp != p1) {
++                    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, p1, *pp);
++                    sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, p1, *pp);
++                    fail = 1;
++                    return FT_DDR_ERR;
++                }
++            }
++
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * march_c
++ * @iter: 重复次数
++ * @p1: 写入的数据pattern1
++ * @p2: 写入的数据pattern2
++ *
++ * 低地址到高地址，读p1，写p2，再读p2，写p1
++ * 高地址到低地址，读p1，写p2，再读p2，写p1
++ *
++ * 无返回值
++ */
++static int march_c(char *desc, int iter, volatile uint32 p1, volatile uint32 p2)
++{
++    int i;
++    uint32   p_temp;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "Iter:%d P1:0x%x p2:0x%x.\n", iter, p1, p2);
++    /* 低地址到高地址，写p1  */
++    fd_write_value_low_to_high(p1);
++
++    /* 低地址到高地址，读p1，写p2，再读p2，写p1 */
++    for (i = 0; i < 2; i++) {
++        if (fd_write_value_low_to_high_check(p1, p2, 1, desc)) {
++            return FT_DDR_ERR;
++        }
++        /* p1、p2值互换 */
++        p_temp = p1;
++        p1 = p2;
++        p2 = p_temp;
++    }
++
++    /* 高地址到低地址，读p1，写p2，再读p2，写p1 */
++    for (i = 0; i < 2; i++) {
++        if (fd_write_value_high_to_low_check(p1, p2, 1, desc)) {
++            return FT_DDR_ERR;
++        }
++        /* p1、p2值互换 */
++        p_temp = p1;
++        p1 = p2;
++        p2 = p_temp;
++    }
++
++    /* 验证最后写入的p1值 */
++    if (fd_write_value_low_to_high_check(p1, p2, 0, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * march_g
++ * @iter: 重复次数
++ * @p1: 写入的数据pattern1
++ * @p2: 写入的数据pattern2
++ *
++ * 低地址到高地址，对同个地址:读p1、写p2、再读p2、写p1
++ * 低地址到高地址，对同个地址:读p2、先写p1再写p2
++ * 高地址到低地址，对同个地址:读p2、先写p1、写p2、再写p1
++ * 高地址到低地址，对同个地址:读p1、先写p2、再写p1
++ *
++ * 无返回值
++ */
++static int march_g(char *desc, int iter, uint32 p1, uint32 p2)
++{
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "Iter:%d P1:0x%x p2:0x%x.\n", iter, p1, p2);
++    /* 低地址到高地址，写p1  */
++    fd_write_value_low_to_high(p1);
++
++    /* 低地址到高地址，对同个地址:读p1、写p2、再读p2、写p1 */
++    if (fd_write_value_low_to_high_check_two(p1, p2, 1, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    /* 低地址到高地址，对同个地址:读p2、先写p1再写p2 */
++    if (fd_write_value_low_to_high_check(p2, p1, 2, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    /* 高地址到低地址，对同个地址:读p2、先写p1、写p2、再写p1 */
++    if (fd_write_value_high_to_low_check(p2, p1, 3, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    /* 高地址到低地址，对同个地址:读p1、先写p2、再写p1 */
++    if (fd_write_value_high_to_low_check(p1, p2, 2, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    /* 高地址到低地址，对同个地址:读p1 */
++    if (fd_write_value_low_to_high_check(p1, p2, 0, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * column_operate
++ * @iter: 重复次数
++ * @p1: 写入的数据pattern1
++ * @col_num: 列地址偏移
++ *
++ * 采用"列操作"算法
++ * 低地址到高地址，对(n * step + col_addr)地址写p1
++ *
++ * 无返回值
++ */
++static int column_operate(char *desc, int iter, uint32 p1, uint32 col_num)
++{
++    int     j, k, done;
++    uvpv pe;
++    uvpv start, end;
++    ul   n;
++    ul   step = 0x2000;
++    ul   addr;
++    ul   col_addr;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    /* 低地址到高地址，对(n * step + col_addr)地址写p1  */
++    for (k = 0; k < iter; k++) {
++
++        for (j = 0; j < segs; j++) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pe = start;
++            pp = start;
++            done = 0;
++
++            if (((ul) start % step) <= (col_num & 0x3FF) << 3) {
++                n = (ul) start / step;
++            } else {
++                n = (ul) start / step + 1;
++            }
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++
++                do {
++                    col_addr = (col_num & 0x3FF) << 3;
++                    addr = n * step + col_addr;
++                    pp = (uint32 *) addr;
++                    if (pp >= end)
++                        break;
++                    *pp = p1;
++                    n++;
++                } while (pp < pe);
++            } while (!done);
++        }
++
++        /* 低地址到高地址，验证(n * step + col_addr)地址值  */
++        for (j = 0; j < segs; j++) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pe = start;
++            pp = start;
++            done = 0;
++            if (((ul) start % step) < (col_num & 0x3FF) << 3) {
++                n = (ul) start / step;
++            } else {
++                n = (ul) start / step + 1;
++            }
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++
++                do {
++                    col_addr = (col_num & 0x3FF) << 3;
++                    addr = n * step + col_addr;
++                    pp = (uint32 *) addr;
++                    if (pp >= end)
++                        break;
++                    if (*pp != p1) {
++                        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, p1, *pp);
++                        sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, p1, *pp);
++                        fail = 1;
++                        return FT_DDR_ERR;
++                    }
++                    n++;
++                } while (pp < pe);
++            } while (!done);
++        }
++
++    }
++
++    return GRTD_SUCCESS;
++}
++
++
++/**
++ * galloping
++ * @p1: 写入的数据pattern1
++ * @p2: 写入的数据pattern2
++ *
++ * 低地址到高地址，写p2到addr、读addr+1、读addr、写p1到addr+1
++ * 高地址到低地址，写p2到addr、读addr-1、读addr、写p1到addr-1
++ *
++ * 无返回值
++ */
++static int galloping(char *desc, uint32 p1, uint32 p2)
++{
++    int     j, done;
++    uvpv  pe;
++    uvpv  start, end;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    /* 低地址到高地址，写p1 */
++    fd_write_value_low_to_high(p1);
++
++    /* 低地址到高地址，写p2到addr、读addr+1、读addr、写p1到addr+1 */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++            for (; pp < pe; pp++) {
++                if (pp + 1 >= pe)
++                    break;
++                *pp = p2;
++                *(pp + 1) = p1;
++            }
++            *pp = p2;
++
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    /* 低地址到高地址，读p2 */
++    if (fd_write_value_low_to_high_check(p2, p1, 0, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    /* 高地址到低地址，写p2到addr、读addr-1、读addr、写p1到addr-1 */
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = end - 1;
++        pp = end - 1;
++        done = 0;
++        do {
++            /* Check for underflow */
++            if (fd_check_underflow(&pe, start, &done)) {
++                break;
++            }
++
++            do {
++                if (pp - 1 <= pe)
++                    break;
++                *pp = p2;
++                *(pp - 1) = p1;
++            } while (pp-- > pe);
++            *pp = p2;
++        } while (!done);
++        //FT_DDR_SHOW();
++    }
++
++    /* 高地址到低地址，读p2 */
++    if (fd_write_value_high_to_low_check(p2, p1, 0, desc)) {
++        return FT_DDR_ERR;
++    }
++
++    return GRTD_SUCCESS;
++}
++
++static void block_move_use_long_type(ul *s, ul *d, int blk_size)
++{
++    int k;
++
++    for (k = 0; k < blk_size / sizeof(ul); k++) {
++        *(d++) = *(s++);
++    }
++}
++
++/**
++ * swap_blocks
++ * @iter: 重复的次数
++ * @swap_times: 块交换重复的次数
++ * @blk_size: 每个内存块的大小
++ *
++ * 将要测试的内存区域分成n+1块，第n+1块作为临时交换块
++ * 从第1块开始到第n块，将相邻的两个块的数据互换
++ * 从第n块开始到第1块，将相邻的两个块的数据互换
++ *
++ * 无返回值
++ */
++static int swap_blocks(char *desc, int iter, int swap_times, ul blk_size)
++{
++    int     i, j, done;
++    uvpv pe;
++    uvpv start, end;
++    uvpv ptemp;
++    uvpv pprev;
++    uvpv pnext;
++    ul   n;
++    int     t;
++    int     seed1, seed2;
++    int     times;
++    uint32   num;
++    uvpv pend;
++    ul   test_size;
++
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++
++    iter = 1;
++    for (times = 0; times < iter; times++) {
++        start = v->map[0].start;
++        end = v->map[0].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        seed1 = 521288629;
++        seed2 = 362436069;
++
++        rand_seed(seed1, seed2);
++
++        /* 低地址到高地址，写rand() */
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++
++            for (; pp < pe; pp++) {
++                *pp = ft_rand();
++            }
++        } while (!done);
++        //FT_DDR_SHOW();
++
++        start = v->map[0].start;
++        end = v->map[0].end;
++        pe = start;
++        pp = start;
++        done = 0;
++
++        for (t = 0; t < swap_times; t++) {
++            test_size = (ul)end - (ul)start;
++            n = test_size / blk_size;
++            //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL,"start = %p, end = %p, test_size:0x%llx n = %lu\n", start, end, (long long unsigned int)test_size, n);
++
++            /* 最后一个完整块作为交换块 */
++            while (1) {
++                ptemp = (uint32 *)((ul)start + (n + 1) * blk_size);
++                pend = (uint32 *)((ul)ptemp + blk_size);
++                if (pend >= end) {
++                    n--;
++                } else {
++                    break;
++                }
++            }
++            //FT_DDR_SHOW();
++            //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL,"n = %lu\n", n);
++
++            //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL,"Test form 1 to %lu.\n", n);
++            /* 从第1块开始到第n块，将相邻的两个块的数据互换 */
++            for (i = 0; i < n; i++) {
++                pprev = (uint32 *) ((ul) start + i * blk_size);
++                for (j = i + 1; j <= n; j++) {
++                    /* 将当前第i块数据全部写到交换块中 */
++                    pprev = (uint32 *) ((ul) start + i * blk_size);
++                    ptemp = (uint32 *) ((ul) start + (n + 1) * blk_size);
++
++                    block_move_use_long_type((ul *)pprev, (ul *)ptemp, blk_size);
++
++                    /* 将当前第i+1块数据全部写到当前第i块中 */
++                    pprev = (uint32 *)((ul) start + i * blk_size);
++                    pnext = (uint32 *)((ul) start + j * blk_size);
++                    block_move_use_long_type((ul *)pnext, (ul *)pprev, blk_size);
++                    /* 将当前交换块数据全部写到当前第i+1块中 */
++                    pnext = (uint32 *) ((ul) start + j * blk_size);
++                    ptemp = (uint32 *) ((ul) start + (n + 1) * blk_size);
++                    block_move_use_long_type((ul *)ptemp, (ul *)pnext, blk_size);
++                }
++                //FT_DDR_SHOW();
++            }
++
++            //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "Test form %lu to 1.\n", n);
++            ptemp = (uint32 *) ((ul) start + (n + 1) * blk_size);
++            /* 从第n块开始到第1块，将相邻的两个块的数据互换 */
++            for (i = n; i > 0; i--) {
++                pprev = (uint32 *) ((ul) start + i * blk_size);
++                for (j = i - 1; j >= 0; j--) {
++                    /* 将当前第i块数据全部写到交换块中 */
++                    pprev = (uint32 *) ((ul) start + i * blk_size);
++                    ptemp = (uint32 *) ((ul) start + (n + 1) * blk_size);
++                    block_move_use_long_type((ul *)pprev, (ul *)ptemp, blk_size);
++                    /* 将当前第i-1块数据全部写到当前第i块中 */
++                    pnext = (uint32 *) ((ul) start + j * blk_size);
++                    pprev = (uint32 *) ((ul) start + i * blk_size);
++                    block_move_use_long_type((ul *)pnext, (ul *)pprev, blk_size);
++                    /* 将当前交换块数据全部写到当前第i-1块中 */
++                    pnext = (uint32 *) ((ul) start + j * blk_size);
++                    ptemp = (uint32 *) ((ul) start + (n + 1) * blk_size);
++                    block_move_use_long_type((ul *)ptemp, (ul *)pnext, blk_size);
++                }
++                //FT_DDR_SHOW();
++            }
++
++            /* 低地址到高地址，读rand() */
++            pe = start;
++            pp = start;
++            done = 0;
++            end = (uint32 *) ((ul)pend - blk_size);
++            rand_seed(seed1, seed2);
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++                for (; pp < pe; pp++) {
++                    num = ft_rand();
++                    if (*pp != num) {
++                        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, num, *pp);
++                        sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, num, *pp);
++                        fail = 1;
++                        return FT_DDR_ERR;
++                    }
++                }
++            } while (!done);
++            //FT_DDR_SHOW();
++        }
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * ft_ddr_test_init
++ *
++ * 初始化需要测试的内存区域，默认为工厂测试允许的所有范围
++ *
++ * 无返回值
++ */
++void ft_ddr_test_init(ulv *start, size_t size)
++{
++    int i;
++
++    v->rdtsc = 1;
++    v->msegs = 1;  /* 目前设定测试的内存区域数为1 */
++    fail = 0;
++    segs = 1;
++
++    printf("\n\t\tstart addr:%p size:0x%lx.\n", start, (long unsigned int)size);
++    fflush(stdout);
++    for (i = 0; i < v->msegs; i++) {
++        v->pmap[i].start = (ul)start;
++        v->pmap[i].end = ((ul)start + size);
++        v->map[i].start = (uint32 *)start;
++        v->map[i].end = (uint32 *)((ul)start + size);
++    }
++}
++
++/**
++ * ddr_half_mov_inv_random_pat
++ *
++ * 使用"半移动反转"算法，写内存地址从低地址到高地址；
++ * 先往测试内存区域写入p1数据格式，并检验写入数据是否正确；
++ * 再往测试内存区域写入~p1数据格式，并检验写入数据是否正确；
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_half_mov_inv_random_pat(char *desc)
++{
++    int     i, j, done, seed1, seed2;
++    uvpv pe, start, end;
++    uint32   num;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_half_mov_inv_random_pat test.\n");
++    if (fail) {
++        sprintf(desc, "No test.");
++        return FT_DDR_ERR;
++    }
++    /* Initialize memory with initial sequence of random numbers.  */
++    seed1 = 521288629 + v->pass;
++    seed2 = 362436069 - v->pass;
++    rand_seed(seed1, seed2);
++
++    for (j = 0; j < segs; j++) {
++        start = v->map[j].start;
++        end = v->map[j].end;
++        pe = start;
++        pp = start;
++        done = 0;
++        do {
++            /* Check for overflow */
++            if (fd_check_overflow(&pe, end, &done)) {
++                break;
++            }
++            for (; pp < pe; pp++) {
++                *pp = ft_rand();
++            }
++        } while (!done);
++        //GRTD_PRINTF(".");
++    }
++
++    /* Do moving inversions test. Check for initial pattern and then
++     * write the complement for each memory location. Test from bottom
++     * up and then from the top down.
++     */
++    for (i = 0; i < 2; i++) {
++        rand_seed(seed1, seed2);
++        for (j = 0; j < segs; j++) {
++            start = v->map[j].start;
++            end = v->map[j].end;
++            pe = start;
++            pp = start;
++            done = 0;
++            do {
++                /* Check for overflow */
++                if (fd_check_overflow(&pe, end, &done)) {
++                    break;
++                }
++
++                if (i) {
++                    num = 0xffffffff;
++                } else {
++                    num = 0;
++                }
++                for (; pp < pe; pp++) {
++                    num = ft_rand();
++                    if (i) {
++                        num = ~num;
++                    }
++                    if (*pp != num) {
++                        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ERROR, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, num, *pp);
++                        sprintf(desc, "[0x%08lx] should be 0x%x,but is 0x%x.\n", (ul) pp, num, *pp);
++                        fail = 1;
++                        return FT_DDR_ERR;
++                    }
++                    *pp = ~num;
++                }
++            } while (!done);
++        }
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * ddr_mov_inv_random_pat
++ *
++ * 使用"移动反转"算法，写内存地址从低地址到高地址及从高地址到地址；
++ * 先往测试内存区域写入p1数据格式，并检验写入数据是否正确；
++ * 再往测试内存区域写入~p1数据格式，并检验写入数据是否正确；
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mov_inv_random_pat(char *desc)
++{
++    /* Random Data */
++    p1 = ft_rand();
++    p2 = ~p1;
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mov_inv_random_pat test.\n");
++    return moving_inversions(desc, 2, p1, p2);
++}
++
++/**
++ * ddr_mov_inv_0_1
++ * @show: 信息输出控制参数
++ *
++ * 采用"移动反转"算法
++ * 数据格式:p1 = 0;p2 = ~0;或p1 = ~0;p2 = 0;
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mov_inv_0_1(char *desc)
++{
++    static unsigned int test_times = 0;
++
++    test_times++;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mov_inv_0_1 test.\n");
++    /* Moving inversions, all ones and zeros */
++    if (test_times % 2 == 1) {
++        p1 = 0;
++        p2 = ~p1;
++    } else {
++        /* Switch patterns */
++        p2 = p1;
++        p1 = ~p2;
++    }
++
++    return moving_inversions(desc, 3, p1, p2);
++}
++
++/**
++ * ddr_mov_inv_8_pat
++ * @show: 信息输出控制参数
++ *
++ * 采用"移动反转"算法
++ * 数据格式:
++ * 每次调用该函数后，p0左移1位
++ * p1 = p0;p2 = ~p0;或p1 = ~p0;p2 = p0;
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mov_inv_8_pat(char *desc)
++{
++    static int times = 0;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mov_inv_8_pat test.\n");
++    /* Moving inversions, 8 bit wide walking ones and zeros. */
++    if (times == 0) {
++        p0 = 0x80;
++    } else {
++        p0 = p0 >> 1;
++    }
++    p1 = p0 | (p0 << 8) | (p0 << 16) | (p0 << 24);
++
++    if (times % 2 == 0) {
++        p2 = ~p1;
++    } else {
++        /* Switch patterns */
++        p2 = p1;
++        p1 = ~p2;
++    }
++    times++;
++
++    if (times >= 8) {
++        times = 0;
++    }
++
++    return moving_inversions(desc, 3, p1, p2);
++}
++
++/**
++ * ddr_mov_inv_32_pat
++ * @show: 信息输出控制参数
++ *
++ * 采用"移动反转32"算法
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mov_inv_32_pat(char *desc)
++{
++    static int times = 0;
++    static unsigned int test_times = 0;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mov_inv_32_pat test.\n");
++    test_times++;
++    if (times == 0) {
++        p1 = 1;
++    } else {
++        p1 = p1 << 1;
++        times ++;
++        if (times >= 32)
++            times = 0;
++    }
++
++    if (moving_inversions32(desc, 2, p1, 1, 0x80000000, 0, times) ||
++        moving_inversions32(desc, 2, ~p1, 0xfffffffe, 0x7fffffff, 1, times)) {
++        return FT_DDR_ERR;
++    }
++
++    return GRTD_SUCCESS;
++}
++
++/**
++ * ddr_mod20_random_pat
++ * @show: 信息输出控制参数
++ *
++ * 采用"模20"算法
++ * 数据格式:
++ * p1 = ft_rand();p2 = ~ft_rand();或p1 = ~ft_rand();p2 = ft_rand();
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mod20_random_pat(char *desc)
++{
++    static int mod20_rand_times = 0;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mod20_random_pat test.\n");
++    /* Modulo 20 check, Random pattern */
++    if (mod20_rand_times % 40 == 0) {
++        p1 = ft_rand();
++        mod20_rand_times = 0;
++    } else {
++        mod20_rand_times++;
++    }
++
++    if (mod20_rand_times % 2 == 0) {
++        p2 = ~p1;
++    } else {
++        /* Switch patterns */
++        p2 = p1;
++        p1 = ~p2;
++    }
++
++    return modtst(desc, mod20_rand_times, 3, p1, p2);
++}
++
++/**
++ * ddr_mod20_0_1_pat
++ * @show: 信息输出控制参数
++ *
++ * 采用"模20"算法
++ * 数据格式:p1 = 0;p2 = ~0;或p1 = ~0;p2 = 0;
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mod20_0_1_pat(char *desc)
++{
++    static int ddr_mod20_0_1_times = 0;
++    int     times;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mod20_0_1_pat test.\n");
++    /* Modulo 20 check, all ones and zeros */
++    p1 = 0;
++    times = ddr_mod20_0_1_times % MOD_SZ;
++    ddr_mod20_0_1_times++;
++
++    if (times % 2 == 0) {
++        p2 = ~p1;
++        /* modtst(times, 3, p1, p2); */
++    } else {
++        /* Switch patterns */
++        p2 = p1;
++        p1 = ~p2;
++        /* modtst(times, 3, p1, p2); */
++    }
++
++    return modtst(desc, times, 3, p1, p2);
++}
++
++/**
++ * ddr_mod20_8_pat
++ * @show: 信息输出控制参数
++ *
++ * 采用"模20"算法
++ * 数据格式:
++ * 每次调用该函数后，p0左移1位
++ * p1 = p0;p2 = ~p0;或p1 = ~p0;p2 = p0;
++ *
++ * 成功返回0；失败返回1
++ */
++static int ddr_mod20_8_pat(char *desc)
++{
++    static int pass = 0;
++    static int ddr_mod20_8_pat_times = 0;
++    int     times;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_mod20_8_pat test.\n");
++    /* Modulo 20 check, 8 bit pattern */
++    pass = ddr_mod20_8_pat_times / MOD_SZ;
++    pass = pass % 8;
++    if (pass == 0) {
++        p0 = 0x80;
++    } else {
++        p0 = p0 >> 1;
++    }
++
++    p1 = p0 | (p0 << 8) | (p0 << 16) | (p0 << 24);
++
++    times = ddr_mod20_8_pat_times % MOD_SZ;
++    if (times % 2 == 0) {
++        p2 = ~p1;
++    } else {
++        /* Switch patterns */
++        p2 = p1;
++        p1 = ~p2;
++    }
++    ddr_mod20_8_pat_times ++;
++
++    return modtst(desc, times, 2, p1, p2);
++}
++
++static int ddr_addr_walking(char *desc)
++{
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_addr_walking test.\n");
++    return addrress_walking(desc);
++}
++
++static int ddr_march_c(char *desc)
++{
++    static unsigned int test_times = 0;
++
++    test_times++;
++    if (test_times == 1) {
++        p1 = 0;
++    } else {
++        p1 = ft_rand();
++    }
++    p2 = ~p1;
++    return march_c(desc, 1, p1, p2);
++}
++
++static int ddr_march_g(char *desc)
++{
++    static unsigned int test_times = 0;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_march_g test.\n");
++    test_times++;
++    if (test_times == 1) {
++        p1 = 0;
++    } else {
++        p1 = ft_rand();
++    }
++    p2 = ~p1;
++
++    return march_g(desc, 1, p1, p2);
++}
++
++static int ddr_galloping(char *desc)
++{
++    static unsigned int test_times=0;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_galloping test.\n");
++    test_times ++;
++    if (test_times == 1) {
++        p1 = 0;
++    } else {
++        p1 = ft_rand();
++    }
++    p2 = ~p1;
++
++    return galloping(desc, p1, p2);
++}
++
++static int ddr_column_operate(char *desc)
++{
++    int i;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_column_operate test.\n");
++    for (i = 0; i < 1023; i++) {
++        p1 = ~i;
++        /* column_operate(1, p1, i); */
++        if (column_operate(desc, 1, p1, i)) {
++            return FT_DDR_ERR;
++        }
++        if (i % 100 == 0) {
++            //FT_DDR_SHOW();
++        }
++    }
++
++    return GRTD_SUCCESS;
++}
++
++static int ddr_swap_blocks(char *desc)
++{
++    static unsigned int test_times = 0;
++    ul blk_size;
++    int ret;
++    int swap_times = 1;
++    struct vars v_tmp;
++
++    //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "ddr_swap_blocks test.\n");
++    test_times++;
++    blk_size = (ul)blk_size_array[1]; /* 24MB */
++
++    strncpy((char *)(&v_tmp), (char *)(v), sizeof(struct vars));
++#if 0
++    if (((ul)v->map[0].end - (ul)v->map[0].start) > MEMORY_SIZE_1G) {
++        //GRTD_TEST_DBG(GRTD_DBG_LEVEL_ALL, "set memory size to 0x%lx.\n", MEMORY_SIZE_1G);
++        v->map[0].end = (unsigned int *)((ul)v->map[0].start + MEMORY_SIZE_1G);
++    }
++#endif
++    ret = swap_blocks(desc, test_times, swap_times, blk_size);
++    strncpy((char *)(v), (char *)(&v_tmp), sizeof(struct vars));
++
++    return ret;
++}
++
++
+diff --git a/ft_ddr_test.h b/ft_ddr_test.h
+new file mode 100644
+index 0000000..182f862
+--- /dev/null
++++ b/ft_ddr_test.h
+@@ -0,0 +1,123 @@
++/*
++ * $Id: ft_ddr_test.h,v 1.0.0.0 2009/08/05 17:37:52 xiezb Exp $               
++ * Copyright (C)2009-2009 �������.  All rights reserved. 
++ */
++
++/*
++ * ft_ddr_test.h               
++ * Original Author:  xiezb@ruijie.com.cn, 2009-8-5   
++ * �ڴ�����㷨���ͷ�ļ�
++ *
++ * History
++ * 
++ */
++
++#ifndef __COMMON_FT_DDR_TEST_H__
++#define __COMMON_FT_DDR_TEST_H__
++
++#include <sys/types.h>
++#include "types.h"
++#include <stdio.h>
++#define FT_DDR_SUCCESS      0
++#define FT_DDR_ERR          1
++#define SPINSZ              0x800000
++#define MOD_SZ              20
++#define MAX_MEM_SEGMENTS    32
++#define BLK_SIZE_NUM_MAX    9
++#define BADRAM_MAXPATNS     10
++#define LOW_TEST_ADR        0x00002000        /* Final adrs for test code */
++#define HIGH_TEST_ADR       0x00180000        /* Relocation base address */
++#define USE_DMA
++#define TETS_TOTAL_NUMBER   13
++#define FT_SHOW_PROCESS     1
++#define GRTD_SUCCESS 0
++#ifdef FT_SHOW_PROCESS
++//#define FT_DDR_SHOW()           do {printf("."); fflush(stdout);}while (0)
++//#define FT_DDR_SHOW_END()       do {printf("\n"); fflush(stdout);}while (0)
++#else
++#define FT_DDR_SHOW()           do {}while (0)
++#define FT_DDR_SHOW_END()       do {}while (0)
++#endif
++#define FLUSH_PRINT(log) do {printf((log)); fflush(stdout);}while (0)
++
++typedef struct data_seg_s {
++    int     seq;
++    ul   start_addr;
++    ul   end_addr;
++    ul   size;
++    int     use_dma;
++} data_seg_t;
++
++struct pair {
++	ul adr;
++    ul mask;
++};
++
++struct mmap {
++    ulv pbase_addr;
++    unsigned int *start;
++    unsigned int *end;
++};
++
++struct pmap {
++    ulv start;
++    ulv end;
++};
++
++/* Define common variables accross relocations of memtest86 */
++struct vars {
++    int test;
++    int pass;
++    unsigned long *eadr;
++    unsigned long exor;
++    int msg_line;
++    int ecount;
++    int ecc_ecount;
++    int msegs;           /* Ҫ���Ե��ڴ������� */
++    int testsel;
++    int scroll_start;
++    int rdtsc;
++    int pae;
++    int pass_ticks;
++    int total_ticks;
++    int pptr;
++    int tptr;
++    struct pmap pmap[MAX_MEM_SEGMENTS];
++    struct mmap map[MAX_MEM_SEGMENTS];
++    ul plim_lower;
++    ul plim_upper;
++    ul clks_msec;
++    ul starth;
++    ul startl;
++    ul snaph;
++    ul snapl;
++    int printmode;
++    int numpatn;
++    struct pair patn [BADRAM_MAXPATNS];
++    ul test_pages;
++    ul selected_pages;
++    ul reserved_pages;
++};
++
++struct tseq {
++    short cache;
++    short pat;
++    short iter;
++    short ticks;
++    short errors;
++    char *msg;
++};
++
++typedef struct ft_ddr_test_interface_s {
++    int always;                             /* �����Ƿ���� 0:������ 1:���� */
++    int (*ddr_test)(char *desc);
++    char name[64];
++} ft_ddr_test_interface_t;
++
++/* �ڴ���������ʼ�� */
++extern void ft_ddr_test_init(ulv *start, size_t size);
++/* �ڴ������ؽṹ������ */
++extern ft_ddr_test_interface_t ft_ddr_test_fun[TETS_TOTAL_NUMBER];
++
++#endif /* __COMMON_FT_DDR_TEST_H__ */
++
+diff --git a/memtester.c b/memtester.c
+index 16aacec..7ce9d7e 100644
+--- a/memtester.c
++++ b/memtester.c
+@@ -29,6 +29,7 @@
+ #include "types.h"
+ #include "sizes.h"
+ #include "tests.h"
++#include "ruijie_tests.h"
+ 
+ #define EXIT_FAIL_NONSTARTER    0x01
+ #define EXIT_FAIL_ADDRESSLINES  0x02
+@@ -54,6 +55,8 @@ struct test tests[] = {
+     { "8-bit Writes", test_8bit_wide_random },
+     { "16-bit Writes", test_16bit_wide_random },
+ #endif
++    { "ruijie test", ruijie_memory_test },
++
+     { NULL, NULL }
+ };
+ 
+diff --git a/ruijie_tests.c b/ruijie_tests.c
+new file mode 100644
+index 0000000..8121a46
+--- /dev/null
++++ b/ruijie_tests.c
+@@ -0,0 +1,103 @@
++#include<stdio.h>
++#include<stdlib.h>
++#include<string.h>
++#include <errno.h>
++#include"ruijie_tests.h"
++#include"ft_ddr_test.h"
++typedef unsigned int uint32_t;
++
++/**
++ * platform_complex_sys_memory_test - 内存测试
++ * @sdram_test: 输出，内存测试结果明细
++ * @kaoji: 输入，当前是否拷机 *
++ * Return int: FAC_TEST_FAIL | FAC_TEST_OK
++ */
++int platform_complex_sys_memory_test(char *desc, int kaoji, ulv *buf,size_t autotest_size, ul algorithm)
++{
++    int ret;
++    int i;
++    char desc_tmp[128];
++
++    if (desc == NULL) {
++       printf("param is error!\n");
++       return -1;
++    }
++
++    ret = 0;//FAC_SUCCESS;
++    /* 获取可供测试的内存空间 */
++    //if (platform_get_mem_space(&buf, &size) != FAC_SUCCESS) {
++    //    return FAC_TEST_SDRAM_GET_MEM_FOR_TEST_FAIL;
++    //}
++
++    //GRTD_BSP_DBG(GRTD_DBG_LEVEL_ALL, "MEM:Get test space success, start at [0x%lx] size[0x%lx]\n",
++    //    (ulong)buf, (ulong)size);
++
++    //autotest_size = size;
++    //if (totalsz != 0 && autotest_size > totalsz) {
++    //    autotest_size = totalsz;
++    ///}
++
++    ft_ddr_test_init(buf, autotest_size);
++    /* init memory */
++    memset((char *)buf, 0, autotest_size);
++
++    /* Test memory */
++    memset((char *)desc_tmp, 0, 128);
++    for (i = 0 ; i < TETS_TOTAL_NUMBER; i++) {
++        if (algorithm == 0) {
++            if (ft_ddr_test_fun[i].always == 0 && kaoji) {
++                /* 拷机状态下，某些测试项不测试 */
++                continue;
++            }
++        } else {
++            if ((algorithm & (ul)(1UL << i)) == 0) {
++                continue;
++            }
++        }
++
++        if (ft_ddr_test_fun[i].ddr_test != NULL) {
++            if (ft_ddr_test_fun[i].ddr_test(desc_tmp) != 0) {
++                printf("\t\t%s: %s\n", ft_ddr_test_fun[i].name, desc_tmp);
++				fflush(stdout);
++                ret = -1;
++                break;
++            }else{
++				printf("\t\t%s: %s\n", ft_ddr_test_fun[i].name, "ok");
++				fflush(stdout);
++			}
++        }
++
++    }
++    printf("\truijie test summary:");
++    fflush(stdout);
++    //FT_DDR_SHOW_END();
++    //GRTD_BSP_DBG(GRTD_DBG_LEVEL_ALL, "TEST sdram complex success (ret:%d).\n", ret);
++    //platform_free_mem_space(buf, size);      /* Free memory */
++    return ret;
++}
++
++int ruijie_memory_test(unsigned long volatile *bufa, unsigned long volatile *bufb, size_t count)
++{
++	size_t totalsz = count*sizeof(ul)*2; //resume from memtester
++	int kaoji = 0;
++	char desc[4095];
++    char *env_testmask = 0;
++    ul algorithm = 0;
++
++	/* If MEMTESTER_TEST_MASK is set, we use its value as a mask of which
++		tests we run.
++	  */
++	 if (env_testmask = getenv("MEMTESTER_TEST_RJ_MASK")) {
++		 //errno = 0;
++		 algorithm = strtoul(env_testmask, 0, 0);
++		 if (errno) {
++			 fprintf(stderr, "error parsing MEMTESTER_TEST_RJ_MASK %s: %s\n", 
++					 env_testmask, strerror(errno));
++		 }
++		 printf("\n\tusing rj testmask 0x%lx\n", algorithm);
++	 }
++
++
++	return platform_complex_sys_memory_test(desc, kaoji, bufa,totalsz, algorithm);
++}
++
+diff --git a/ruijie_tests.h b/ruijie_tests.h
+new file mode 100644
+index 0000000..9a2445d
+--- /dev/null
++++ b/ruijie_tests.h
+@@ -0,0 +1,7 @@
++#ifndef __RJ_TEST_H__
++#define __RJ_TEST_H__
++
++int ruijie_memory_test(unsigned long volatile *bufa, unsigned long volatile *bufb, size_t count);
++
++
++#endif /* __RJ_TEST_H__ */

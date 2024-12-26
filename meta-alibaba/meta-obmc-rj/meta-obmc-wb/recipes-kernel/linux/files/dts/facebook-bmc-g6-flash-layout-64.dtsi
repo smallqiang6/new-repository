@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0+
+// Copyright (c) 2018 Facebook Inc.
+
+partitions {
+	compatible = "fixed-partitions";
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	u-boot@0 {
+		reg = <0x0 0x100000>;
+		label = "u-boot";
+	};
+
+	u-boot-env@100000 {
+		reg = <0x100000 0x40000>;
+		label = "env";
+	};
+
+	kernel@140000 {
+		reg = <0x140000 0x400000>;
+		label = "kernel";
+	};
+
+	rootfs@540000 {
+		reg = <0x540000 0x3980000>;
+		label = "rootfs";
+	};
+
+	/*
+	 * "data0" partition is used by several Facebook BMC platforms
+	 * as persistent data store.
+	 */
+	data@3ec0000 {
+		reg = <0x3ec0000 0x140000>;
+		label = "data0";
+	};
+
+	/*
+	 * Although the master partition can be created by enabling
+	 * MTD_PARTITIONED_MASTER option, below "flash0" partition is
+	 * explicitly created to avoid breaking legacy applications.
+	 */
+	flash@0 {
+		reg = <0x0 0x4000000>;
+		label = "flash0";
+	};
+};

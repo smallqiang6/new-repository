@@ -1,0 +1,12 @@
+[Unit]
+Description=System ntpd Service
+After=networking.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/ntpd -u ntp:ntp -p /run/ntpd.pid -g
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

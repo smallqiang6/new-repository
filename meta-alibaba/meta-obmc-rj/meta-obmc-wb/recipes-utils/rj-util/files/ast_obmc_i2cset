@@ -1,0 +1,24 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+args=$*
+lenth=4 # bus dev reg value
+if [ -f /etc/device/cpucpld_fpga ]; then
+  key="fpga"
+elif [ -f /etc/device/cpucpld_icelake ]; then
+  key="icelake"
+elif [ -f /etc/device/cpucpld_icelakecto ]; then
+  key="icelakecto"
+elif [ -f /etc/device/cpucpld_bus14default ]; then
+  key="bus14default"
+else
+  key="default"
+fi
+args_subarr=(${args#*${key}})
+addr_val=${args_subarr[@]:0:${lenth}}
+if [[ ${addr_val} =~ $1 ]]; then
+  exit -1
+fi
+obmc_i2cset $1 $2 ${addr_val}

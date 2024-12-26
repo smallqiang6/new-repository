@@ -1,0 +1,24 @@
+{
+    "SWITCH": {
+        "MinorAlarm": 98.9,
+        "MajorAlarm": 104.9,
+        "FailureConfirmTime": 15
+    },
+    "CPU": {
+        "MinorAlarm": 94.9,
+        "MajorAlarm": 97.9,
+        "FailureConfirmTime": 15
+    },
+    "INLET": {
+        "MinorAlarm": 36.9,
+        "MajorAlarm": 39.9,
+        "FailureConfirmTime": 15
+    },
+    "NIC": {
+        "MinorAlarm": 95.0,
+        "MajorAlarm": 100.0,
+        "FailureConfirmTime": 15
+    },
+    "RUN_CYCLE": 6,
+    "RECOVER_TIME": 300
+}

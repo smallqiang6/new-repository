@@ -1,0 +1,32 @@
+From 15e6303dd21ab91ed61d10ca42817071483f9811 Mon Sep 17 00:00:00 2001
+From: zhouyongtao <zhouyongtao@ruijie.com.cn>
+Date: Fri, 7 Jun 2024 17:13:41 +0800
+Subject: [PATCH 5/9] Summary:add 26 uboot stop wdt2
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202406079374
+BUGID: 1189507
+WorkPackageName: bsp
+The ratio of self research code(0~1): 1
+---
+ include/configs/wb_ast2600.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/include/configs/wb_ast2600.h b/include/configs/wb_ast2600.h
+index 004754ae..38a79b5c 100644
+--- a/include/configs/wb_ast2600.h
++++ b/include/configs/wb_ast2600.h
+@@ -26,8 +26,8 @@
+ #define CONFIG_AUTOBOOT_STOP_STR   "\x03"
+ #define CONFIG_AUTOBOOT_KEYED
+ 
+-#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG) /* stop fmcwdt2 */
+-# define CONFIG_PRECLICOMMAND "echo stop fmcwdt2; mw 1e620064 0; "
++#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG) /* stop fmcwdt2 and wdt2 */
++# define CONFIG_PRECLICOMMAND "echo stop fmcwdt2 and wdt2; mw 1e620064 0; mw 1e78504c 0; "
+ #else /* stop wdt1 */
+ # if defined(CONFIG_CMD_VBS)
+ #   define CONFIG_PRECLICOMMAND "vbs interrupt; "
+-- 
+2.25.1
+

@@ -1,0 +1,593 @@
+From 0956ea8b10533ecc5098beb99a3ae4df9847d261 Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Fri, 9 Aug 2024 14:58:13 +0800
+Subject: [PATCH 8/9] Summary:(uboot env add mac_increased and e2 type)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202408096651
+BUGID: NA
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: I72a12ac4535320dd76f71c655c9f51f0517d16e1
+---
+ board/wb-obmc/ast/ast-common.h |   2 +
+ board/wb-obmc/ast/ast-g5.c     | 183 +++++++++++++++++++++++---------
+ board/wb-obmc/ast/ast-g6.c     | 186 ++++++++++++++++++++++++---------
+ 3 files changed, 271 insertions(+), 100 deletions(-)
+
+diff --git a/board/wb-obmc/ast/ast-common.h b/board/wb-obmc/ast/ast-common.h
+index 93a0975b..6903d189 100644
+--- a/board/wb-obmc/ast/ast-common.h
++++ b/board/wb-obmc/ast/ast-common.h
+@@ -36,6 +36,8 @@ typedef struct dev_info_s {
+     int mac_addr_valid_flag;               /* Valid MAC address indicates a valid MAC address */
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
+     int fru_mac_extra_index;
++    int mac_increased;                     /* The BMC MAC address increment of the BASE MAC address. */
++    char syseeprom_type[PRODUCT_INFO_LEN]; /* syseeprom type such as:onie-tlv, sysfru-a, sysfru-b */
+ } dev_info_t;
+ 
+ #endif/* _AST_COMMON_H */
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+index 674bb13e..613385e1 100644
+--- a/board/wb-obmc/ast/ast-g5.c
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -58,6 +58,14 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define ENV_MAC1_ADDR             "eth1addr"
+ #define ENV_ETH_PRIME             "ethprime"
+ 
++#define ENV_MAC_INCREASED         "mac_increased"
++#define ENV_SYSEEPROM_TYPE        "syseeprom_type"
++#define E2TYPE_ONIE_TLV           "onie-tlv"
++#define E2TYPE_SYSFRU_A           "sysfru-a"
++#define E2TYPE_SYSFRU_B           "sysfru-b"
++#define E2TYPE_WEDGE              "wedge"
++#define E2TYPE_UNKNOWN            "unknown"
++
+ #define PRODUCT_I2C_ADDR          (0x57)
+ #define PRODUCT_EEPROM_LEN        (256)
+ 
+@@ -251,24 +259,40 @@ static void delete_space_lf_cr(char *str)
+     }
+ }
+ 
+-static void calc_bmc_mac(u_int8_t *mac_addr)
++static uint64_t mac_to_uint64(u_int8_t *mac_addr)
+ {
+-    int i, tmp_val;
++    return ((uint64_t)mac_addr[0] << 40) |
++           ((uint64_t)mac_addr[1] << 32) |
++           ((uint64_t)mac_addr[2] << 24) |
++           ((uint64_t)mac_addr[3] << 16) |
++           ((uint64_t)mac_addr[4] << 8) |
++           (uint64_t)mac_addr[5];
++}
+ 
+-    tmp_val = mac_addr[MAC_ADDR_LENGTH - 1] + 2;
+-    if (tmp_val > 0xff) {
+-        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
+-        for (i = 1; i < MAC_ADDR_LENGTH; i++) {
+-            if (mac_addr[MAC_ADDR_LENGTH - i - 1] == 0xff) {
+-                mac_addr[MAC_ADDR_LENGTH - i - 1] = 0;
+-            } else {
+-                mac_addr[MAC_ADDR_LENGTH - i - 1]++;
+-                break;
+-            }
+-        }
+-    } else {
+-        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
+-    }
++static void uint64_to_mac(uint64_t value, u_int8_t *mac_addr)
++{
++    mac_addr[0] = (value >> 40) & 0xFF;
++    mac_addr[1] = (value >> 32) & 0xFF;
++    mac_addr[2] = (value >> 24) & 0xFF;
++    mac_addr[3] = (value >> 16) & 0xFF;
++    mac_addr[4] = (value >> 8)  & 0xFF;
++    mac_addr[5] = value & 0xFF;
++}
++
++static void calc_bmc_mac(u_int8_t *mac_addr, int mac_increased)
++{
++    u64 base_mac_value, bmc_mac_value;
++
++    base_mac_value = mac_to_uint64(mac_addr);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
++    ast_debug("mac_increased: %d, base_mac_value: 0x%llx\n", mac_increased, base_mac_value);
++
++    bmc_mac_value = base_mac_value + mac_increased;
++    uint64_to_mac(bmc_mac_value, mac_addr);
++    ast_debug("bmc_mac_value: 0x%llx\n", bmc_mac_value);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+     return;
+ }
+ 
+@@ -626,6 +650,28 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];
+     int mac_addr_valid_flag;
+ 
++    /* get dev_info by product id */
++    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
++    if (ret < 0) {
++        return -1;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (product_id == g_dev_info_list[i].dev_type) {
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product id: 0x%lx not found in dev_info_list.\n", product_id);
++        return -1;
++    }
++
++    /* onie-tlv eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_ONIE_TLV);
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+@@ -633,29 +679,20 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+             mac_addr_valid_flag = 0;
+         }
+     }
+-    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
+-    if (ret < 0) {
+-        return -1;
+-    }
+ 
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (product_id == g_dev_info_list[i].dev_type) {
+-            *dev_info = &g_dev_info_list[i];
+-            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-            if (mac_addr_valid_flag) {
+-                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-            }
+-            return 0;
+-        }
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+     }
+-    return -1;
++
++    return 0;
+ }
+ 
+ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+@@ -665,6 +702,29 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+     char product[PRODUCT_INFO_LEN];
+     int mac_addr_valid_flag;
+ 
++    /* get dev_info by product name */
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++    /* wedge eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_WEDGE);
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+@@ -672,7 +732,7 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+@@ -680,24 +740,12 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         }
+     }
+ 
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+     }
+ 
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-            if (mac_addr_valid_flag) {
+-                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-            }
+-            return 0;
+-        }
+-    }
+-    return -1;
++    return 0;
+ }
+ 
+ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+@@ -756,6 +804,16 @@ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         return -1;
+     }
+ 
++    /* fru eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    if ((*dev_info)->fru_mac_extra_index == 1) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_B);
++    } else if ((*dev_info)->fru_mac_extra_index == 2) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_A);
++    } else {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "sysfru-%d", (*dev_info)->fru_mac_extra_index);
++    }
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
+@@ -763,7 +821,7 @@ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+@@ -1020,7 +1078,9 @@ static void save_product_name(dev_info_t *dev_info)
+     u32 len;
+     char fit[PRODUCT_INFO_LEN];
+     char board_id_str[PRODUCT_INFO_LEN];
++    char mac_increased_str[PRODUCT_INFO_LEN];
+     char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
++    char *p_mac_increased, *p_syseeprom_type;
+     int is_save_flag;
+     int i;
+     char *debug_product;
+@@ -1099,6 +1159,31 @@ static void save_product_name(dev_info_t *dev_info)
+         is_save_flag = 1;
+     }
+ 
++    /* mac_increased */
++    memset(mac_increased_str, 0, sizeof(mac_increased_str));
++    snprintf(mac_increased_str, sizeof(mac_increased_str), "%d", dev_info->mac_increased);
++    p_mac_increased = env_get(ENV_MAC_INCREASED);
++    if (p_mac_increased == NULL || strcmp(p_mac_increased, mac_increased_str) != 0) {
++        env_set(ENV_MAC_INCREASED, mac_increased_str);
++        is_save_flag = 1;
++    }
++
++    /* syseeprom_type */
++    p_syseeprom_type = env_get(ENV_SYSEEPROM_TYPE);
++    if (p_syseeprom_type == NULL) {
++        if (strlen(dev_info->syseeprom_type) == 0) {
++            env_set(ENV_SYSEEPROM_TYPE, E2TYPE_UNKNOWN);
++        } else {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++        }
++        is_save_flag = 1;
++    } else {
++        if ((strlen(dev_info->syseeprom_type) != 0) && (strcmp(dev_info->syseeprom_type, p_syseeprom_type) != 0)) {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++            is_save_flag = 1;
++        }
++    }
++
+     if (is_save_flag) {
+         ast_debug("save_env\n");
+         env_save();
+diff --git a/board/wb-obmc/ast/ast-g6.c b/board/wb-obmc/ast/ast-g6.c
+index 4f27f239..97ad712b 100644
+--- a/board/wb-obmc/ast/ast-g6.c
++++ b/board/wb-obmc/ast/ast-g6.c
+@@ -42,10 +42,17 @@ int env_save(void);
+ #define ENV_MAC3_ADDR             "eth3addr"
+ #define ENV_ETH_PRIME             "ethprime"
+ 
++#define ENV_MAC_INCREASED         "mac_increased"
++#define ENV_SYSEEPROM_TYPE        "syseeprom_type"
++#define E2TYPE_ONIE_TLV           "onie-tlv"
++#define E2TYPE_SYSFRU_A           "sysfru-a"
++#define E2TYPE_SYSFRU_B           "sysfru-b"
++#define E2TYPE_WEDGE              "wedge"
++#define E2TYPE_UNKNOWN            "unknown"
++
+ #define PRODUCT_I2C_ADDR          (0x57)
+ #define PRODUCT_EEPROM_LEN        (256)
+ 
+-
+ #define SCU_BASE	0x1e6e2000
+ #define ESPI_BASE	0x1e6ee000
+ #define LPC_BASE	0x1e789000
+@@ -344,24 +351,40 @@ static void delete_space_lf_cr(char *str)
+     }
+ }
+ 
+-static void calc_bmc_mac(u_int8_t *mac_addr)
++static uint64_t mac_to_uint64(u_int8_t *mac_addr)
+ {
+-    int i, tmp_val;
+-
+-    tmp_val = mac_addr[MAC_ADDR_LENGTH - 1] + 2;
+-    if (tmp_val > 0xff) {
+-        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
+-        for (i = 1; i < MAC_ADDR_LENGTH; i++) {
+-            if (mac_addr[MAC_ADDR_LENGTH - i - 1] == 0xff) {
+-                mac_addr[MAC_ADDR_LENGTH - i - 1] = 0;
+-            } else {
+-                mac_addr[MAC_ADDR_LENGTH - i - 1]++;
+-                break;
+-            }
+-        }
+-    } else {
+-        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
+-    }
++    return ((uint64_t)mac_addr[0] << 40) |
++           ((uint64_t)mac_addr[1] << 32) |
++           ((uint64_t)mac_addr[2] << 24) |
++           ((uint64_t)mac_addr[3] << 16) |
++           ((uint64_t)mac_addr[4] << 8) |
++           (uint64_t)mac_addr[5];
++}
++
++static void uint64_to_mac(uint64_t value, u_int8_t *mac_addr)
++{
++    mac_addr[0] = (value >> 40) & 0xFF;
++    mac_addr[1] = (value >> 32) & 0xFF;
++    mac_addr[2] = (value >> 24) & 0xFF;
++    mac_addr[3] = (value >> 16) & 0xFF;
++    mac_addr[4] = (value >> 8)  & 0xFF;
++    mac_addr[5] = value & 0xFF;
++}
++
++static void calc_bmc_mac(u_int8_t *mac_addr, int mac_increased)
++{
++    u64 base_mac_value, bmc_mac_value;
++
++    base_mac_value = mac_to_uint64(mac_addr);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
++    ast_debug("mac_increased: %d, base_mac_value: 0x%llx\n", mac_increased, base_mac_value);
++
++    bmc_mac_value = base_mac_value + mac_increased;
++    uint64_to_mac(bmc_mac_value, mac_addr);
++    ast_debug("bmc_mac_value: 0x%llx\n", bmc_mac_value);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+     return;
+ }
+ 
+@@ -719,6 +742,28 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];
+     int mac_addr_valid_flag;
+ 
++    /* get dev_info by product id */
++    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
++    if (ret < 0) {
++        return -1;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (product_id == g_dev_info_list[i].dev_type) {
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product id: 0x%lx not found in dev_info_list.\n", product_id);
++        return -1;
++    }
++
++    /* onie-tlv eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_ONIE_TLV);
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+@@ -726,29 +771,20 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+             mac_addr_valid_flag = 0;
+         }
+     }
+-    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
+-    if (ret < 0) {
+-        return -1;
+-    }
+ 
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (product_id == g_dev_info_list[i].dev_type) {
+-            *dev_info = &g_dev_info_list[i];
+-            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-            if (mac_addr_valid_flag) {
+-                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-            }
+-            return 0;
+-        }
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+     }
+-    return -1;
++
++    return 0;
+ }
+ 
+ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+@@ -758,6 +794,29 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+     char product[PRODUCT_INFO_LEN];
+     int mac_addr_valid_flag;
+ 
++    /* get dev_info by product name */
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++    /* wedge eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_WEDGE);
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+@@ -765,7 +824,7 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+@@ -773,24 +832,12 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         }
+     }
+ 
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+     }
+ 
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-            if (mac_addr_valid_flag) {
+-                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-            }
+-            return 0;
+-        }
+-    }
+-    return -1;
++    return 0;
+ }
+ 
+ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+@@ -849,6 +896,16 @@ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         return -1;
+     }
+ 
++    /* fru eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    if ((*dev_info)->fru_mac_extra_index == 1) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_B);
++    } else if ((*dev_info)->fru_mac_extra_index == 2) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_A);
++    } else {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "sysfru-%d", (*dev_info)->fru_mac_extra_index);
++    }
++
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+     ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
+@@ -856,7 +913,7 @@ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+     } else {
+-        calc_bmc_mac(mac_addr);
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+         if (is_valid_ethaddr(mac_addr)) {
+             mac_addr_valid_flag = 1;
+         } else {
+@@ -1113,7 +1170,9 @@ static void save_product_name(dev_info_t *dev_info)
+     u32 len;
+     char fit[PRODUCT_INFO_LEN];
+     char board_id_str[PRODUCT_INFO_LEN];
++    char mac_increased_str[PRODUCT_INFO_LEN];
+     char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
++    char *p_mac_increased, *p_syseeprom_type;
+     int is_save_flag;
+     int i;
+     char *debug_product;
+@@ -1201,6 +1260,31 @@ static void save_product_name(dev_info_t *dev_info)
+         is_save_flag = 1;
+     }
+ 
++    /* mac_increased */
++    memset(mac_increased_str, 0, sizeof(mac_increased_str));
++    snprintf(mac_increased_str, sizeof(mac_increased_str), "%d", dev_info->mac_increased);
++    p_mac_increased = env_get(ENV_MAC_INCREASED);
++    if (p_mac_increased == NULL || strcmp(p_mac_increased, mac_increased_str) != 0) {
++        env_set(ENV_MAC_INCREASED, mac_increased_str);
++        is_save_flag = 1;
++    }
++
++    /* syseeprom_type */
++    p_syseeprom_type = env_get(ENV_SYSEEPROM_TYPE);
++    if (p_syseeprom_type == NULL) {
++        if (strlen(dev_info->syseeprom_type) == 0) {
++            env_set(ENV_SYSEEPROM_TYPE, E2TYPE_UNKNOWN);
++        } else {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++        }
++        is_save_flag = 1;
++    } else {
++        if ((strlen(dev_info->syseeprom_type) != 0) && (strcmp(dev_info->syseeprom_type, p_syseeprom_type) != 0)) {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++            is_save_flag = 1;
++        }
++    }
++
+     if (is_save_flag) {
+         ast_debug("save_env\n");
+         env_save();
+-- 
+2.25.1
+

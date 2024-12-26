@@ -1,0 +1,11 @@
+[Unit]
+Description=Initiate Procuct Platform Device
+Requires=platform_driver.service
+After=platform_driver.service bmc-ready.service
+ 
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env setup_platform.sh
+
+[Install]
+WantedBy=sonic.target

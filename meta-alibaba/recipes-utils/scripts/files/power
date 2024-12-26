@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+from hal.hal_misc import HalMisc
+
+def usage():
+    print("usage:")
+    print("    power cpu [on|off|cycle|reset|status]")
+    exit()
+
+def arg_parser():
+    parser = argparse.ArgumentParser(description = 'control cpu')
+    parser.add_argument("cpu", help="power cpu", type=str)
+    parser.add_argument("option", help="on|off|cycle|reset|status", type=str)
+
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    """
+    power.py control the status of cpu
+    """
+    try:
+        hal_misc = HalMisc()
+        args = arg_parser()
+        if args.cpu == "cpu":
+            if args.option == "on" or args.option == "off" or args.option == "cycle" or args.option == "reset":
+                str_input = input("power %s cpu [y/n]:"%(args.option))
+                if str_input.lower() == "y" or str_input.lower() == "yes" :
+                    print(repr(hal_misc.set_host_cpu_power(args.option)))
+            elif args.option == "status":
+                print(repr(hal_misc.get_host_cpu_power_status()))
+            else:
+                print("error option")
+                usage()
+        else:
+            print("error option")
+            usage()
+    except Exception as e:
+        print("Error returned: " + str(e))

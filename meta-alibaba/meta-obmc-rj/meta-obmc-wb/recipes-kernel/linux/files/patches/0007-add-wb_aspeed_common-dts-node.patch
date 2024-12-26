@@ -1,0 +1,50 @@
+From 2d3565d33f09184aace9ea1b98a0ad552689855b Mon Sep 17 00:00:00 2001
+From: limin5 <limin5@ruijie.com.cn>
+Date: Tue, 27 Aug 2024 00:32:43 +0800
+Subject: [PATCH 7/8] add wb_aspeed_common dts node
+
+BranchName:facebook-meta-whitebox-master
+CAFID: N202408268889
+BUGID:
+WorkPackageName:
+The ratio of self research code(0~1):
+---
+ arch/arm/boot/dts/aspeed-g5.dtsi | 5 +++++
+ arch/arm/boot/dts/aspeed-g6.dtsi | 5 +++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/arch/arm/boot/dts/aspeed-g5.dtsi b/arch/arm/boot/dts/aspeed-g5.dtsi
+index 743fffead..0a0cea25c 100644
+--- a/arch/arm/boot/dts/aspeed-g5.dtsi
++++ b/arch/arm/boot/dts/aspeed-g5.dtsi
+@@ -49,6 +49,11 @@ memory@80000000 {
+ 		reg = <0x80000000 0>;
+ 	};
+ 
++    /* BMC common */
++    wb_aspeed_common:wb_aspeed_common {
++        compatible = "aspeed,ast2500-wb-common";
++    };
++
+ 	ahb {
+ 		compatible = "simple-bus";
+ 		#address-cells = <1>;
+diff --git a/arch/arm/boot/dts/aspeed-g6.dtsi b/arch/arm/boot/dts/aspeed-g6.dtsi
+index 3235f9766..fdaa5ff85 100644
+--- a/arch/arm/boot/dts/aspeed-g6.dtsi
++++ b/arch/arm/boot/dts/aspeed-g6.dtsi
+@@ -77,6 +77,11 @@ cpu@f01 {
+ 		};
+ 	};
+ 
++    /* BMC common */
++    wb_aspeed_common:wb_aspeed_common {
++        compatible = "aspeed,ast2600-wb-common";
++    };
++
+ 	timer {
+ 		compatible = "arm,armv7-timer";
+ 		interrupt-parent = <&gic>;
+-- 
+2.25.1
+

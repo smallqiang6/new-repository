@@ -1,0 +1,273 @@
+From 1f6f061622ff845626e866c399609def289817cf Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Tue, 9 Apr 2024 15:36:38 +0800
+Subject: [PATCH 5/8] Summary:(fix rtc-pcf85063 bug)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202404098334
+BUGID: NA
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: I34c47c2b4c38b0df4b241e18a15ae262d8968d3e
+---
+ drivers/rtc/rtc-pcf85063.c | 174 ++++++++++++++++++++++++++++++++++---
+ 1 file changed, 161 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/rtc/rtc-pcf85063.c b/drivers/rtc/rtc-pcf85063.c
+index 14da4ab30..e1f7d48b7 100644
+--- a/drivers/rtc/rtc-pcf85063.c
++++ b/drivers/rtc/rtc-pcf85063.c
+@@ -31,9 +31,11 @@
+  *  RV8263 -- Rev. 1.0 — January 2019
+  */
+ 
+-#define PCF85063_REG_CTRL1		0x00 /* status */
+-#define PCF85063_REG_CTRL1_CAP_SEL	BIT(0)
+-#define PCF85063_REG_CTRL1_STOP		BIT(5)
++#define PCF85063_REG_CTRL1              0x00 /* status */
++#define PCF85063_REG_CTRL1_CAP_SEL      BIT(0)
++#define PCF85063_REG_CTRL1_12_24_MODE   BIT(1)
++#define PCF85063_REG_CTRL1_STOP         BIT(5)
++#define PCF85063_REG_CTRL1_SOFT_RESET  (0x58)
+ 
+ #define PCF85063_REG_CTRL2		0x01
+ #define PCF85063_CTRL2_AF		BIT(6)
+@@ -63,14 +65,126 @@ struct pcf85063_config {
+ 	unsigned force_cap_7000:1;
+ };
+ 
++typedef enum {
++    cap_7pf = 0,
++    cap_12_5pf,
++} cap_mode_t;
++
++typedef enum {
++    CLK_FREQ_32768=0,
++    CLK_FREQ_16384,
++    CLK_FREQ_8192,
++    CLK_FREQ_4096,
++    CLK_FREQ_2048,
++    CLK_FREQ_1024,
++    CLK_FREQ_1,
++    CLK_FREQ_LOW,
++} clock_fre_t;
++
+ struct pcf85063 {
+ 	struct rtc_device	*rtc;
+ 	struct regmap		*regmap;
+ #ifdef CONFIG_COMMON_CLK
+ 	struct clk_hw		clkout_hw;
+ #endif
++    struct i2c_client *client;
++    u8 cap_mode;        /* 0: 7pF, 1: 12.5pF */
++    u8 clock_freq;      /* 0~7, see clock_fre_t */
++    u8 accuracy_value;  /* Offset register (address 02h), used to accuracy tuning */
+ };
+ 
++static int pcf85063_soft_reset(struct pcf85063 *pcf85063)
++{
++    int ret;
++    struct i2c_client *client;
++
++    client = pcf85063->client;
++    ret = regmap_write(pcf85063->regmap, PCF85063_REG_CTRL1, PCF85063_REG_CTRL1_SOFT_RESET);
++    if (ret) {
++        dev_err(&client->dev, "Failed to do soft reset, ret: %d\n", ret);
++        return -EIO;
++    }
++
++    return 0;
++}
++
++static int pcf85063_hw_init(struct pcf85063 *pcf85063)
++{
++    unsigned int data;
++    int ret;
++    struct i2c_client *client;
++
++    client = pcf85063->client;
++    /* setting cap-mode and 24-hour mode */
++    ret = regmap_read(pcf85063->regmap, PCF85063_REG_CTRL1, &data);
++    if (ret) {
++        dev_err(&client->dev, "Failed to read control_1 reg, ret: %d\n", ret);
++        return -EIO;
++    }
++
++    data &= ~(PCF85063_REG_CTRL1_CAP_SEL | PCF85063_REG_CTRL1_12_24_MODE | PCF85063_REG_CTRL1_STOP);
++    data |= pcf85063->cap_mode;
++    ret = regmap_write(pcf85063->regmap, PCF85063_REG_CTRL1, data);
++    if (ret) {
++        dev_err(&client->dev, "Failed to set cap-mode: 0x%x, ret: %d\n", pcf85063->cap_mode, ret);
++        return -EIO;
++    }
++
++    /* setting clock-fre */
++    ret = regmap_read(pcf85063->regmap, PCF85063_REG_CTRL2, &data);
++    if (ret) {
++        dev_err(&client->dev, "Failed to read control_2 reg, ret: %d\n", ret);
++        return -EIO;
++    }
++
++    data &= ~PCF85063_REG_CLKO_F_MASK;
++    data |= pcf85063->clock_freq;
++    ret = regmap_write(pcf85063->regmap, PCF85063_REG_CTRL2, data);
++    if (ret) {
++        dev_err(&client->dev, "Failed to set clock-fre: 0x%x, ret: %d\n", pcf85063->clock_freq, ret);
++        return -EIO;
++    }
++
++    /* setting clock accuracy */
++    ret = regmap_write(pcf85063->regmap, PCF85063_REG_OFFSET, pcf85063->accuracy_value);
++    if (ret) {
++        dev_err(&client->dev, "Failed to set offset value : 0x%x, ret: %d\n", pcf85063->accuracy_value, ret);
++        return -EIO;
++    }
++
++    dev_dbg(&client->dev, "pcf85063_hw_init success, cap-mode: 0x%x, clock-fre: 0x%x, accuracy_value: 0x%x\n",
++        pcf85063->cap_mode, pcf85063->clock_freq, pcf85063->accuracy_value);
++    return 0;
++}
++
++static int pcf85063_dts_config_init(struct pcf85063 *pcf85063)
++{
++    int ret;
++    struct i2c_client *client;
++    struct device_node *of_node;
++
++    client = pcf85063->client;
++    of_node = client->dev.of_node;
++    ret = of_property_read_u8(of_node, "cap-mode", &pcf85063->cap_mode);
++    ret |= of_property_read_u8(of_node, "clock-freq", &pcf85063->clock_freq);
++    ret |= of_property_read_u8(of_node, "accuracy-value", &pcf85063->accuracy_value);
++    if (ret != 0) {
++        dev_err(&client->dev, "Failed to parse pcf85063 dts config, ret: %d\n", ret);
++        return -ENXIO;
++    }
++
++    if ((pcf85063->cap_mode > cap_12_5pf) || (pcf85063->cap_mode < cap_7pf)) {
++        dev_err(&client->dev, "Invalid capacitance mode: %d\n", pcf85063->cap_mode);
++        return -EINVAL;
++    }
++
++    if ((pcf85063->clock_freq > CLK_FREQ_LOW) || (pcf85063->clock_freq < CLK_FREQ_32768)) {
++        dev_err(&client->dev, "Invalid clock frequency: %d\n", pcf85063->clock_freq);
++        return -EINVAL;
++    }
++    return 0;
++}
++
+ static int pcf85063_rtc_read_time(struct device *dev, struct rtc_time *tm)
+ {
+ 	struct pcf85063 *pcf85063 = dev_get_drvdata(dev);
+@@ -112,6 +226,16 @@ static int pcf85063_rtc_set_time(struct device *dev, struct rtc_time *tm)
+ 	int rc;
+ 	u8 regs[7];
+ 
++    rc = pcf85063_soft_reset(pcf85063);
++    if (rc) {
++        return rc;
++    }
++
++    rc = pcf85063_hw_init(pcf85063);
++    if (rc) {
++        return rc;
++    }
++
+ 	/*
+ 	 * to accurately set the time, reset the divider chain and keep it in
+ 	 * reset state until all time/date registers are written
+@@ -328,7 +452,7 @@ static int pcf85063_nvmem_write(void *priv, unsigned int offset,
+ {
+ 	return regmap_write(priv, PCF85063_REG_RAM, *(u8 *)val);
+ }
+-
++#if 0
+ static int pcf85063_load_capacitance(struct pcf85063 *pcf85063,
+ 				     const struct device_node *np,
+ 				     unsigned int force_cap)
+@@ -356,6 +480,7 @@ static int pcf85063_load_capacitance(struct pcf85063 *pcf85063,
+ 	return regmap_update_bits(pcf85063->regmap, PCF85063_REG_CTRL1,
+ 				  PCF85063_REG_CTRL1_CAP_SEL, reg);
+ }
++#endif
+ 
+ #ifdef CONFIG_COMMON_CLK
+ /*
+@@ -527,17 +652,22 @@ static int pcf85063_probe(struct i2c_client *client)
+ 
+ 	pcf85063 = devm_kzalloc(&client->dev, sizeof(struct pcf85063),
+ 				GFP_KERNEL);
+-	if (!pcf85063)
+-		return -ENOMEM;
++	if (!pcf85063) {
++        dev_err(&client->dev, "devm_kzalloc failed.\n");
++        return -ENOMEM;
++    }
+ 
+ 	if (data)
+ 		config = data;
+ 
+ 	pcf85063->regmap = devm_regmap_init_i2c(client, &config->regmap);
+-	if (IS_ERR(pcf85063->regmap))
+-		return PTR_ERR(pcf85063->regmap);
++	if (IS_ERR(pcf85063->regmap)) {
++        dev_err(&client->dev, "devm_regmap_init_i2c failed.\n");
++        return PTR_ERR(pcf85063->regmap);
++    }
+ 
+ 	i2c_set_clientdata(client, pcf85063);
++    pcf85063->client = client;
+ 
+ 	err = regmap_read(pcf85063->regmap, PCF85063_REG_CTRL1, &tmp);
+ 	if (err) {
+@@ -546,15 +676,26 @@ static int pcf85063_probe(struct i2c_client *client)
+ 	}
+ 
+ 	pcf85063->rtc = devm_rtc_allocate_device(&client->dev);
+-	if (IS_ERR(pcf85063->rtc))
+-		return PTR_ERR(pcf85063->rtc);
+-
++	if (IS_ERR(pcf85063->rtc)) {
++        dev_err(&client->dev, "devm_rtc_allocate_device failed\n");
++        return PTR_ERR(pcf85063->rtc);
++    }
++
++    err = pcf85063_dts_config_init(pcf85063);
++    if (err < 0) {
++        return err;
++    }
++    err = pcf85063_hw_init(pcf85063);
++    if (err < 0) {
++        return err;
++    }
++#if 0
+ 	err = pcf85063_load_capacitance(pcf85063, client->dev.of_node,
+ 					config->force_cap_7000 ? 7000 : 0);
+ 	if (err < 0)
+ 		dev_warn(&client->dev, "failed to set xtal load capacitance: %d",
+ 			 err);
+-
++#endif
+ 	pcf85063->rtc->ops = &pcf85063_rtc_ops;
+ 	pcf85063->rtc->range_min = RTC_TIMESTAMP_BEGIN_2000;
+ 	pcf85063->rtc->range_max = RTC_TIMESTAMP_END_2099;
+@@ -587,7 +728,14 @@ static int pcf85063_probe(struct i2c_client *client)
+ 	pcf85063_clkout_register_clk(pcf85063);
+ #endif
+ 
+-	return devm_rtc_register_device(pcf85063->rtc);
++    err = devm_rtc_register_device(pcf85063->rtc);
++    if (err) {
++        dev_err(&pcf85063->rtc->dev, "devm_rtc_register_device failed, ret: %d\n", err);
++    } else {
++        dev_info(&pcf85063->rtc->dev, "registered rtc-pcf85063 with cap-mode: 0x%x, clock-fre: 0x%x, accuracy: 0x%x success\n",
++            pcf85063->cap_mode, pcf85063->clock_freq, pcf85063->accuracy_value);
++    }
++	return err;
+ }
+ 
+ #ifdef CONFIG_OF
+-- 
+2.25.1
+

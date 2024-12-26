@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+import argparse
+from hal.hal_misc import HalMisc
+
+def usage():
+    print("usage:")
+    print("    led_location on/off/status")
+    exit()
+
+def arg_parser():
+    parser = argparse.ArgumentParser(description = 'control led')
+    parser.add_argument("option", help="on|off|status", type=str)
+
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    try:
+        """
+        led.py get/set system fan led and location led
+        """
+        hal_misc = HalMisc()
+        args = arg_parser()
+        if args.option == "on" or args.option == "off":
+            print(repr(hal_misc.set_location_led(args.option)))
+        elif args.option == "status":
+            print(repr(hal_misc.get_location_led()))
+        else:
+            print("error option")
+            usage()
+    except Exception as e:
+        print("Error returned: " + str(e))

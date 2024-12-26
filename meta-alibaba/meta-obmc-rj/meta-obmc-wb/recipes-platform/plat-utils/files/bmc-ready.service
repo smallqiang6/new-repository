@@ -1,0 +1,10 @@
+[Unit]
+Description=Bmc ready
+After=bios_post_code_monitor.service tty-console.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env init_once.sh
+
+[Install]
+WantedBy=bmc.target

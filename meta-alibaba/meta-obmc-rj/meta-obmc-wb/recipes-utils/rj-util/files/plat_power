@@ -1,0 +1,934 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+. /usr/local/bin/ast-functions
+
+# Determine Whether folder(/var/log/fw) exists
+if [ ! -d "/var/log/fw" ]; then
+  mkdir /var/log/fw
+fi
+
+cpu_last_reset_status="/var/log/fw/cpu_last_reset_status"
+status=0
+function power_help()
+{
+  echo "    USAGE: $0 option
+     e.g.: $0 cpu on/off/cycle/reset/status
+     e.g.: $0 mac on/off/status
+     e.g.: $0 port on/off/status
+     e.g.: $0 machine cycle
+     e.g.: $0 bmc-emmc cycle
+     e.g.: $0 cpu-emmc cycle
+     e.g.: $0 netcard1/netcard2 on/off/status
+       on: power on CPU/MAC/PORT
+      off: power off CPU/MAC/PORT
+    cycle: power off and then power on host cpu/machine/bmc-emmc/cpu-emmc
+    reset: reset host cpu
+   status: display the power status of CPU/MAC/PORT"
+  exit 1
+}
+
+function echo_message()
+{
+  echo "$1"
+  logger -p DEBUG "$1"
+}
+
+function read_status()
+{
+  result_status=$(ast_product_func_call cpu_status)
+  result_value=$(echo $?)
+  return $result_value
+}
+
+# Result of power on\off\cycle\reset CPU
+function result_power()
+{
+  result_status=$(read_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current CPU power status is OFF"
+      else
+        echo "Operation failed, current CPU power status is OFF"
+      fi
+    ;;
+    1)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current CPU power status is ON"
+      else
+        echo "Operation failed, current CPU power status is ON"
+      fi
+    ;;
+    *)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current CPU power status is UNKNOWN"
+      else
+        echo "Operation failed, current CPU power status is UNKNOWN"
+      fi
+    ;;
+  esac
+}
+
+# CPU current state
+function power_status()
+{
+  result_status=$(read_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      echo "Current CPU power status is OFF"
+    ;;
+    1)
+      echo "Current CPU power status is ON"
+    ;;
+    *)
+      echo "Operation failed, current CPU power status is UNKNOWN" 
+    ;;
+  esac
+}
+
+# Power on cpu, wait 10s before power on cpu
+function power_on()
+{
+  echo -ne "power on cpu [y/n]:"
+  read on
+  if [[ "$on"x != "y"x ]] && [[ "$on"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_status)
+  result_value=$(echo $?)
+  if [ $result_value == 1 ]; then #current CPU power status is ON and Operation power on
+    echo "Operation done, current CPU power status is ON"
+    exit 0
+  fi
+  for i in {1..10}
+  do
+    echo -n "."
+    sleep 1
+  done
+  echo ""
+  ast_product_func_call power_on_cpu
+  if [ $? == 0 ]; then
+    logger -p DEBUG "plat Power set on"
+    status=1
+  fi
+
+  power_wait_for_status "ON"
+}
+
+#Power off cpu
+function power_off()
+{
+  echo -ne "power off cpu [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_status)
+  result_value=$(echo $?)
+  if [ $result_value == 0 ]; then #current CPU power status is OFF and Operation power off
+    echo "Operation done, current CPU power status is OFF"
+    exit 0
+  fi
+
+  ast_product_func_call power_off_cpu
+  if [ $? == 0 ]; then
+    echo "COLD" > $cpu_last_reset_status
+    logger -p DEBUG "plat Power set off"
+    status=1
+  fi
+  power_wait_for_status "OFF"
+}
+
+#Power cycle cpu, power on and power off
+function power_cycle()
+{
+  echo -ne "power cycle cpu [y/n]:"
+  read cycle
+  if [[ "$cycle"x != "y"x ]] && [[ "$cycle"x != "Y"x ]] ; then
+    exit
+  fi
+
+  restult=$(ast_product_func_call get_support_capability power_cycle_cpu)
+  capability=$?
+  if [ $capability == 1 ];then
+    restult=$(ast_product_func_call power_cycle_cpu)
+    ret=$?
+    if [ $ret != 0 ];then
+      logger -p DEBUG "power_cycle_cpu failed: $restult"
+      status=0
+      result_power $status
+      exit
+    fi
+  else
+    ast_product_func_call power_off_cpu
+    for i in {1..10}
+    do
+      echo -n "."
+      sleep 1
+    done
+    echo ""
+    ast_product_func_call power_on_cpu
+    ret=$?
+  fi
+
+  if [ $ret == 0 ]; then
+    echo "COLD" > $cpu_last_reset_status
+    logger -p DEBUG "plat Power set cycle"
+    status=1
+  fi
+  
+  power_wait_for_status "ON"
+}
+
+#Power reset cpu, power on and power off
+function power_reset()
+{
+  echo -ne "power reset cpu [y/n]:"
+  read reset
+  if [[ "$reset"x != "y"x ]] && [[ "$reset"x != "Y"x ]] ; then
+    exit
+  fi
+
+  ast_product_func_call power_reset_cpu
+  if [ $? == 0 ]; then
+    echo "WARM" > $cpu_last_reset_status
+    logger -p DEBUG "plat Power set reset"
+    status=1
+  fi
+
+  power_wait_for_status "ON"
+}
+
+function power_wait_for_status()
+{
+  wait_for_status=$1
+  for i in {1..20}
+  do
+    sleep 1
+    current_status=$(result_power $status)
+    if [[ $current_status =~ $wait_for_status ]]; then
+      break
+    fi
+  done
+  echo $current_status
+}
+
+function power()
+{
+  case $1 in
+    "on")
+      power_on
+    ;;
+    "off")
+      power_off
+      ast_backup_to_single_data $cpu_last_reset_status
+    ;;
+    "cycle")
+      power_cycle
+      ast_backup_to_single_data $cpu_last_reset_status
+    ;;
+    "reset")
+      power_reset
+      ast_backup_to_single_data $cpu_last_reset_status
+    ;;
+    "status")
+      power_status
+    ;;
+    *)
+      power_help
+    ;; # help
+  esac
+}
+
+#############################################
+############operation of mac#################
+#############################################
+# read mac state
+function read_mac_status()
+{
+  result_status=$(product_mac_status)
+  result_value=$(echo $?)
+  return $result_value
+}
+
+function result_mac_power()
+{
+  result_status=$(read_mac_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current mac power status is OFF"
+      else
+        echo "Operation failed, current mac power status is OFF"
+      fi
+    ;;
+    1)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current mac power status is ON"
+      else
+        echo "Operation failed, current mac power status is ON"
+      fi
+    ;;
+    *)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current mac power status is UNKNOWN"
+      else
+        echo "Operation failed, current mac power status is UNKNOWN"
+      fi
+    ;;
+  esac
+}
+
+# mac current state
+function power_status_mac()
+{
+  result_status=$(read_mac_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      echo "Current mac power status is OFF"
+    ;;
+    1)
+      echo "Current mac power status is ON"
+    ;;
+    *)
+      echo "Operation failed, current mac power status is UNKNOWN" 
+    ;;
+  esac
+}
+#Power on mac
+function power_on_mac()
+{
+  echo -ne "power on mac [y/n]:"
+  read on
+  if [[ "$on"x != "y"x ]] && [[ "$on"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_mac_status)
+  result_value=$(echo $?)
+  if [ $result_value == 2 ]; then
+    echo "unspport this function"
+    exit 0
+  elif [ $result_value == 1 ]; then #current CPU power status is ON and Operation power on
+    echo "Operation done, current mac power status is ON"
+    exit 0
+  else
+    : #pass
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "enable host cpu power force control falied: $ret"
+    echo "enable host cpu power force control falied: $ret"
+    exit 0
+  fi
+  product_power_on_mac
+  if [ $? == 0 ]; then
+    logger -p DEBUG "MAC Power set on"
+    status=1
+  fi
+
+  result_mac_power $status
+
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "disable host cpu power force control falied: $ret"
+    echo "disable host cpu power force control falied: $ret"
+  fi
+
+  product_power_port_with_mac
+  if [ $? -eq 1 ]; then
+    # The port will not be powered on following the mac, and the operation is required
+    set_port_log=$(set_port_on)
+    if [ $? -eq 2 ]; then
+      # failed to power on port
+      echo $set_port_log
+    fi
+  fi
+}
+
+#Power off mac
+function power_off_mac()
+{
+  echo -ne "power off mac [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_mac_status)
+  result_value=$(echo $?)
+  if [ $result_value == 2 ]; then
+    echo "unspport this function"
+    exit 0
+  elif [ $result_value == 0 ]; then #current CPU power status is OFF and Operation power off
+    echo "Operation done, current MAC power status is OFF"
+    exit 0
+  else
+    : #pass
+  fi
+
+  product_power_port_with_mac
+  if [ $? -eq 1 ]; then
+    # The port will not be powered off following the mac, and the operation is required
+    set_port_log=$(set_port_off)
+    if [ $? -eq 2 ]; then
+      # failed to power off port
+      echo $set_port_log
+    fi
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "enable host cpu power force control falied: $ret"
+    echo "enable host cpu power force control falied: $ret"
+    exit 0
+  fi
+  product_power_off_mac
+  if [ $? == 0 ]; then
+    logger -p DEBUG "MAC Power set off"
+    status=1
+  fi
+
+  result_log=$(result_mac_power $status)
+  echo $result_log
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "disable host cpu power force control falied: $ret"
+    echo "disable host cpu power force control falied: $ret"
+  fi
+}
+
+function power_mac()
+{
+  case $1 in
+    "on")
+      power_on_mac
+    ;;
+    "off")
+      power_off_mac
+    ;;
+    "status")
+      power_status_mac
+    ;;
+    *)
+      power_help
+    ;; # help
+  esac
+}
+
+#############################################
+############operation of port#################
+#############################################
+# read port state
+function read_port_status()
+{
+  result_status=$(product_port_status)
+  result_value=$(echo $?)
+  return $result_value
+}
+
+function result_port_power()
+{
+  result_status=$(read_port_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current port power status is OFF"
+      else
+        echo "Operation failed, current port power status is OFF"
+      fi
+    ;;
+    1)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current port power status is ON"
+      else
+        echo "Operation failed, current port power status is ON"
+      fi
+    ;;
+    *)
+      if [ $1 == 1 ]; then
+        echo "Operation done, current port power status is UNKNOWN"
+      else
+        echo "Operation failed, current port power status is UNKNOWN"
+      fi
+    ;;
+  esac
+}
+
+# port current state
+function power_status_port()
+{
+  result_status=$(read_port_status)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      echo "Current port power status is OFF"
+    ;;
+    1)
+      echo "Current port power status is ON"
+    ;;
+    *)
+      echo "Operation failed, current port power status is UNKNOWN" 
+    ;;
+  esac
+}
+#Power on port
+function power_on_port()
+{
+  echo -ne "power on port [y/n]:"
+  read on
+  if [[ "$on"x != "y"x ]] && [[ "$on"x != "Y"x ]] ; then
+    exit
+  fi
+
+  # set cpld
+  set_port_on
+}
+
+function set_port_on() {
+  mac_status=$(read_mac_status)
+  mac_value=$(echo $?)
+  if [[ $mac_value != 2 && $mac_value != 1 ]]; then
+    echo_message "mac power status err, status:$mac_value."
+    return 2
+  else
+    : #pass
+  fi
+
+  result_status=$(read_port_status)
+  result_value=$(echo $?)
+  if [ $result_value == 2 ]; then
+    echo "No need to power port."
+    return 0
+  elif [ $result_value == 1 ]; then #current CPU power status is ON and Operation power on
+    echo "Operation done, current port power status is ON."
+    return 0
+  else
+    : #pass
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a $ret != 127 ];then
+    echo_message "enable host cpu power force control falied: $ret."
+    return 2
+  fi
+  product_power_on_port
+  if [ $? == 0 ]; then
+    logger -p DEBUG "PORT Power set on"
+    status=1
+  fi
+
+  power_result=$(result_port_power $status)
+  echo $power_result
+  if [[ $power_result =~ "ON" && $status == 1 ]]; then
+    power_ret=0 #done
+  else
+    power_ret=2
+    echo_message "failed to power on port."
+  fi
+
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a $ret != 127 ];then
+    echo_message "disable host cpu power force control falied: $ret."
+    return 2
+  fi
+  return $power_ret
+}
+
+#Power off port
+function power_off_port()
+{
+  echo -ne "power off port [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+
+  # set cpld
+  set_port_off
+}
+
+function set_port_off() {
+  mac_status=$(read_mac_status)
+  mac_value=$(echo $?)
+  if [[ $mac_value != 2 && $mac_value != 1 ]]; then
+    echo_message "mac power status err, status:$mac_value."
+    return 2
+  else
+    : #pass
+  fi
+
+  result_status=$(read_port_status)
+  result_value=$(echo $?)
+  if [ $result_value == 2 ]; then
+    echo "unspport power off port"
+    return 0
+  elif [ $result_value == 0 ]; then
+    echo "Operation done, current PORT power status is OFF."
+    return 0
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a $ret != 127 ];then
+    echo_message "enable host cpu power force control falied: $ret."
+    return 2
+  fi
+  product_power_off_port
+  if [ $? == 0 ]; then
+    logger -p DEBUG "PORT Power set off"
+    status=1
+  fi
+
+  power_result=$(result_port_power $status)
+  echo $power_result
+  if [[ $power_result =~ "OFF" && $status == 1 ]]; then
+    power_ret=0
+  else
+    power_ret=2
+    echo_message "failed to power off port."
+  fi
+
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a $ret != 127 ];then
+    echo_message "disable host cpu power force control falied: $ret."
+    power_ret=2
+  fi
+  return $power_ret
+}
+
+function power_port()
+{
+  case $1 in
+    "on")
+      power_on_port
+    ;;
+    "off")
+      power_off_port
+    ;;
+    "status")
+      power_status_port
+    ;;
+    *)
+      power_help
+    ;; # help
+  esac
+}
+
+#############################################
+############operation of machine#############
+#############################################
+function read_machine_status()
+{
+  result_status=$(ast_product_func_call machine_status)
+  result_value=$(echo $?)
+  return $result_value
+}
+
+#Power cycle machine
+function power_cycle_machine()
+{
+  echo -ne "power cycle machine [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_machine_status)
+  result_value=$(echo $?)
+  if [ $result_value == 2 ]; then
+    echo "unspport this function"
+    exit 0
+  fi
+  
+  logger -p DEBUG "ready to set machine Power cycle"
+  ast_product_func_call power_cycle_machine
+  if [ $? == 0 ]; then
+    logger -p DEBUG "machine Power set cycle"
+  else
+    echo "Operation failed, current machine power status is ON"
+  fi
+}
+
+function power_machine()
+{
+  case $1 in
+    "cycle")
+      power_cycle_machine
+    ;;
+    *)
+      power_help
+    ;; # help
+  esac
+}
+
+#############################################
+############operation of bmc emmc#############
+#############################################
+function power_cycle_bmcemmc()
+{
+  ast_product_func_call support_power_bmcemmc
+  is_support=$(echo $?)
+  if [ $is_support -eq 0 ]; then
+    echo "unspport this function"
+    exit 0
+  fi
+  echo -ne "power cycle bmc emmc [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+  logger -p DEBUG "ready to set bmc emmc Power cycle"
+  ast_product_func_call power_cycle_bmcemmc
+  echo "Operation done"
+}
+
+function power_bmcemmc()
+{
+  case $1 in
+    "cycle")
+      power_cycle_bmcemmc
+    ;;
+    *)
+      power_help
+    ;;
+  esac
+}
+
+#############################################
+############operation of cpu emmc#############
+#############################################
+function power_cycle_cpuemmc()
+{
+  ast_product_func_call support_power_cpuemmc
+  is_support=$(echo $?)
+  if [ $is_support -eq 0 ]; then
+    echo "unspport this function"
+    exit 0
+  fi
+  echo -ne "power cycle cpu emmc [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+  logger -p DEBUG "ready to set cpu emmc Power cycle"
+  ast_product_func_call power_cycle_cpuemmc
+  echo "Operation done"
+}
+
+function power_cpuemmc()
+{
+  case $1 in
+    "cycle")
+      power_cycle_cpuemmc
+    ;;
+    *)
+      power_help
+    ;;
+  esac
+}
+
+#############################################
+############operation of netcard#############
+#############################################
+# read netcard state
+function read_netcard_status()
+{
+  result_status=$(product_netcard_status $1)
+  result_value=$(echo $?)
+  return $result_value
+}
+
+function result_netcard_power()
+{
+  netcardid=$1
+  status=$2
+  result_status=$(read_netcard_status $1)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      if [ $status == 1 ]; then
+        echo "Operation done, current netcard$netcardid power status is OFF"
+      else
+        echo "Operation failed, current netcard$netcardid power status is OFF"
+      fi
+    ;;
+    1)
+      if [ $status == 1 ]; then
+        echo "Operation done, current netcard$netcardid power status is ON"
+      else
+        echo "Operation failed, current netcard$netcardid power status is ON"
+      fi
+    ;;
+    *)
+      if [ $status == 1 ]; then
+        echo "Operation done, current netcard$netcardid power status is UNKNOWN"
+      else
+        echo "Operation failed, current netcard$netcardid power status is UNKNOWN"
+      fi
+    ;;
+  esac
+}
+
+# netcard current state
+function power_status_netcard()
+{
+  result_status=$(read_netcard_status $1)
+  result_value=$(echo $?)
+  case $result_value in
+    0)
+      echo "Current netcard$1 power status is OFF"
+    ;;
+    1)
+      echo "Current netcard$1 power status is ON"
+    ;;
+    *)
+      echo "Operation failed, current netcard$1 power status is UNKNOWN"
+    ;;
+  esac
+}
+#Power on netcard
+function power_on_netcard()
+{
+  netcardid=$1
+  echo -ne "power on netcard$netcardid [y/n]:"
+  read on
+  if [[ "$on"x != "y"x ]] && [[ "$on"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_netcard_status $netcardid)
+  result_value=$(echo $?)
+  if [ $result_value == 1 ]; then #current netcard status is ON and Operation power on
+    echo "Operation done, current netcard$netcardid power status is ON"
+    exit 0
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "enable host cpu power force control falied: $ret"
+    echo "enable host cpu power force control falied: $ret"
+    exit 0
+  fi
+  product_power_on_netcard $netcardid
+  if [ $? == 0 ]; then
+    logger -p DEBUG "NetCard$netcardid Power set on"
+    status=1
+  fi
+
+  result_netcard_power $netcardid $status
+
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "disable host cpu power force control falied: $ret"
+    echo "disable host cpu power force control falied: $ret"
+  fi
+}
+
+#Power off netcard
+function power_off_netcard()
+{
+  netcardid=$1
+  echo -ne "power off netcard$1 [y/n]:"
+  read off
+  if [[ "$off"x != "y"x ]] && [[ "$off"x != "Y"x ]] ; then
+    exit
+  fi
+
+  result_status=$(read_netcard_status $netcardid)
+  result_value=$(echo $?)
+  if [ $result_value == 0 ]; then #current netcard power status is OFF and Operation power off
+    echo "Operation done, current NetCard$netcardid power status is OFF"
+    exit 0
+  fi
+
+  result=$(ast_product_func_call enable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "enable host cpu power force control falied: $ret"
+    echo "enable host cpu power force control falied: $ret"
+    exit 0
+  fi
+  product_power_off_netcard $netcardid
+  if [ $? == 0 ]; then
+    logger -p DEBUG "NetCard$netcardid Power set off"
+    status=1
+  fi
+
+  result_netcard_power $netcardid $status
+
+  result=$(ast_product_func_call disable_host_cpu_power_force_control)
+  ret=$?
+  if [ $ret != 0 -a  $ret != 127 ];then
+    logger -p DEBUG "disable host cpu power force control falied: $ret"
+    echo "disable host cpu power force control falied: $ret"
+  fi
+}
+
+function power_netcard()
+{
+  ast_product_func_call support_power_netcard
+  is_support=$(echo $?)
+  if [ $is_support -eq 0 ]; then
+    echo "unspport this function"
+    exit 0
+  fi
+  netcardid=${1#*"netcard"}
+  if [ x${netcardid} != x"1" -a x${netcardid} != x"2" ]; then
+    power_help
+  fi
+  case $2 in
+    "on")
+      power_on_netcard $netcardid
+    ;;
+    "off")
+      power_off_netcard $netcardid
+    ;;
+    "status")
+      power_status_netcard $netcardid
+    ;;
+    *)
+      power_help
+    ;; # help
+  esac
+}
+
+if [[ $# == 2 && $1 == "cpu" ]]; then
+  power $2
+elif [[ $# == 2 && $1 == "mac" ]]; then
+  power_mac $2
+elif [[ $# == 2 && $1 == "port" ]]; then
+  power_port $2
+elif [[ $# == 2 && $1 == "machine" ]]; then
+  power_machine $2
+elif [[ $# == 2 && $1 == "bmc-emmc" ]]; then
+  power_bmcemmc $2
+elif [[ $# == 2 && $1 == "cpu-emmc" ]]; then
+  power_cpuemmc $2
+elif [[ $# == 2 && $1 =~ "netcard" ]]; then
+  power_netcard $1 $2
+else
+  power_help
+fi
+

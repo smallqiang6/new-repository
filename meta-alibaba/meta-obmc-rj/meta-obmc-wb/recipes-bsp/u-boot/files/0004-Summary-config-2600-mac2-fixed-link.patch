@@ -1,0 +1,48 @@
+From 318771b245ac845248136753a7e6b08e89735a1d Mon Sep 17 00:00:00 2001
+From: zhouyongtao <zhouyongtao@ruijie.com.cn>
+Date: Wed, 5 Jun 2024 10:24:38 +0800
+Subject: [PATCH 4/9] Summary:config 2600 mac2 fixed-link
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202406059644
+BUGID: 1180132
+WorkPackageName: bsp
+The ratio of self research code(0~1): 1
+---
+ arch/arm/dts/wb_ast2600.dts  | 7 +++++--
+ configs/wb-ast2600_defconfig | 3 +++
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/dts/wb_ast2600.dts b/arch/arm/dts/wb_ast2600.dts
+index d112dd52..c3f1b185 100644
+--- a/arch/arm/dts/wb_ast2600.dts
++++ b/arch/arm/dts/wb_ast2600.dts
+@@ -95,9 +95,12 @@
+ &mac2 {
+ 	status = "okay";
+ 	phy-mode = "rgmii";
+-	phy-handle = <&ethphy0>;
+ 	pinctrl-names = "default";
+-	pinctrl-0 = <&pinctrl_rgmii3_default &pinctrl_mac3link_default>;	
++	pinctrl-0 = <&pinctrl_rgmii3_default &pinctrl_mac3link_default>;
++    fixed-link {
++        speed = <1000>;
++        full-duplex;
++    };
+ };
+ 
+ &mac3 {
+diff --git a/configs/wb-ast2600_defconfig b/configs/wb-ast2600_defconfig
+index 3d000f5e..dd57623a 100644
+--- a/configs/wb-ast2600_defconfig
++++ b/configs/wb-ast2600_defconfig
+@@ -94,3 +94,6 @@ CONFIG_USB_EHCI_HCD=y
+ CONFIG_USB_STORAGE=y
+ CONFIG_WDT=y
+ CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
++CONFIG_PHY_FIXED=y
++CONFIG_PHY_NCSI=y
++CONFIG_CMD_NCSI=y
+-- 
+2.25.1
+

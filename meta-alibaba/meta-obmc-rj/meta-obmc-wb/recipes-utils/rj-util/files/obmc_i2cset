@@ -1,0 +1,18 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+retry=6
+
+while [ ${retry} -gt 0 ]
+do
+  i2cset $*
+  if [ $? == 0 ] ; then
+    exit 0
+  fi
+  sleep 0.1
+  let retry--
+done
+exit 1

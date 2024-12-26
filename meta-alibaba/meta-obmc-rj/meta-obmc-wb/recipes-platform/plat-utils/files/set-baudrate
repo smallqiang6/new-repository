@@ -1,0 +1,447 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+logger_indicate="set_baudrate"
+
+g_ttyS0=/dev/ttyS0
+g_ttyS4=/dev/ttyS4
+g_ttySbmc=${g_ttyS4}
+g_ttyScpu=${g_ttyS0}
+g_env_mtd=/dev/mtd1
+g_env_image=/tmp/env.img
+g_envro_mtd=/dev/mtd7
+g_envro_image=/tmp/envro.img
+g_baud_bmc_orgn=9600
+g_bootargs_env_orgn=""
+g_set_retry_times=3
+g_restore_retry_times=1
+g_cpu_flag=0
+g_bmc_flag=0
+g_env_flag=0
+g_envro_flag=0
+
+# parm $1: tty device; parm $2: target baudrate; parm $3: retrytimes
+function stty_baudrate()
+{
+    local ttydev=$1
+    local baud_tar=$2
+    local retry_times=$3
+
+    while [ ${retry_times} -gt 0 ]
+    do
+        stty -F $ttydev ispeed $baud_tar ospeed $baud_tar cs8 2>/dev/null
+        if [ $? != 0 ]; then
+            let retry_times--
+            continue
+        fi
+        baud_cur=$(get_ttySn_baudrate $ttydev)
+        if [ $baud_cur == $baud_tar ];then
+            break
+        fi
+        sleep 0.1
+        let retry_times--
+    done
+    if [ ${retry_times} -gt 0 ];then
+        logger -t ${logger_indicate} -p DEBUG "set bmc $ttydev baudrate $baud_tar successfully"
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "set bmc $ttydev baudrate $baud_tar failed"
+        return -1
+    fi
+}
+
+function get_ttySn_baudrate()
+{
+    local B_Sn=$(stty -F $1 speed 2>/dev/null)
+    if [ $? != 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "get bmc $1 baudrate failed: $B_Sn"
+        return -1
+    fi
+    echo $B_Sn
+    return 0
+}
+
+# parm $1: bmc console; $2: target baudrate; parm $3: orgn baudrate; parm $4: retrytimes
+function restart_ttySbmc_service()
+{
+    local console_dev=$1
+    local baud_tar=$2
+    local baud_pre=$3
+    local retry_times=$4
+    local tty=${console_dev##*/}
+    sed -i 's/'"$baud_pre"'/'"$baud_tar"'/g' /lib/systemd/system/serial-getty@.service
+    systemctl daemon-reload
+    while [ ${retry_times} -gt 0 ]
+    do
+        # clear all activities on the BMC console to avoid prolonged restart times for the console service
+        console_bash=$(systemctl status serial-getty@ttyS4.service | grep "\-bash" | grep -v grep | grep -o '[0-9]\+')
+        if [ ${console_bash} ]; then
+            systemctl kill --signal=SIGTERM serial-getty@${tty}.service
+            sleep 5
+            systemctl kill --signal=SIGKILL serial-getty@${tty}.service
+        fi
+        systemctl restart serial-getty@${tty}.service
+        # wait for the settings to take effect
+        sleep 1
+        baud_cur=$(get_ttySn_baudrate $console_dev)
+        if [ $baud_cur == $baud_tar ];then
+            break
+        fi
+        sleep 0.1
+        let retry_times--
+    done
+    if [ ${retry_times} -gt 0 ];then
+        logger -t ${logger_indicate} -p DEBUG "set $console_dev baudrate successfully: $baud_cur"
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "set $console_dev baudrate failed: $baud_cur"
+        return -1
+    fi
+}
+
+function set_envro_baudrate()
+{
+    local retry_times=3
+    while [ ${retry_times} -gt 0 ]
+    do
+        dd if=$g_env_mtd of=$g_env_image 2>/dev/null
+        if [ $? != 0 ]; then
+            logger -t ${logger_indicate} -p DEBUG "failed to dd mtd1, and retry"
+            sleep 0.1
+            let retry_times--
+            continue
+        fi
+        logger -t ${logger_indicate} -p DEBUG "pflashing mtd7 ..."
+        set_envro_result=$(pflash -F $g_envro_mtd -f -E -p $g_env_image)
+        ret=$?
+        if [[ $ret == 0 ]] && [[ -n "$set_envro_result" ]] && [[ "$set_envro_result" != "\n" ]]; then
+            break
+        fi
+        sleep 0.1
+        let retry_times--
+    done
+    if [ ${retry_times} -gt 0 ];then
+        logger -t ${logger_indicate} -p DEBUG "set envro successfully"
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "failed to set envro"
+        return -1
+    fi
+}
+
+# parm $1: target baudrate; parm $2: retrytimes
+function set_env_baudrate()
+{
+    local baud_tar=$1
+    local retry_times=$2
+    while [ ${retry_times} -gt 0 ]
+    do
+        fw_setenv baudrate $baud_tar 2>/dev/null
+        bootargs_val=$(echo $g_bootargs_env_orgn | sed 's/'"$g_baud_bmc_orgn"'/'"$baud_tar"'/g')
+        fw_setenv bootargs $bootargs_val 2>/dev/null
+        baudrate_cur=$(fw_printenv baudrate 2>/dev/null)
+        bootargs_cur=$(fw_printenv bootargs 2>/dev/null)
+        if [[ $baudrate_cur =~ $baud_tar && $bootargs_cur =~ $baud_tar ]]; then
+            break
+        fi
+        sleep 0.1
+        let retry_times--
+    done
+    if [ ${retry_times} -gt 0 ];then
+        logger -t ${logger_indicate} -p DEBUG "set env successfully: $baudrate_cur, $bootargs_cur"
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "failed to set env: $baudrate_cur, $bootargs_cur"
+        return -1
+    fi
+}
+
+# parm $1: device
+function mterm_server_running() {
+    pid=$(ps | grep -v grep | grep '/usr/local/bin/mTerm_server' | grep $1 -m 1 | awk '{print $1}')
+    if [ "$pid" ] ; then
+        return 0
+    fi
+    return 1
+}
+
+function restart_ttyScpu_service() {
+    local cpu_dev=$1
+    local baud_tar=$2
+    local retry_times=$3
+    local tty
+
+    conf_path="/etc/device/baudrate.conf"
+    . ${conf_path}
+    tty=${cpu_dev##*/}
+    baud_name="${tty}_baudrate"
+    current_baud_conf=${!baud_name}
+    old_baud_conf="${baud_name}=${current_baud_conf}"
+    new_baud_conf="${baud_name}=${baud_tar}"
+    logger -t ${logger_indicate} -p DEBUG "change ${old_baud_conf} to ${new_baud_conf} in ${conf_path}"
+    sed -i "/${baud_name}/c\\${new_baud_conf}" ${conf_path}
+
+    while [ ${retry_times} -gt 0 ]
+    do
+        systemctl restart tty-console
+        # wait for the settings to take effect
+        sleep 1
+        baud_cur=$(get_ttySn_baudrate $cpu_dev)
+        if [ $baud_cur == $baud_tar ];then
+            break
+        fi
+        sleep 0.1
+        let retry_times--
+    done
+    if [ ${retry_times} -gt 0 ];then
+        logger -t ${logger_indicate} -p DEBUG "set bmc $cpu_dev baudrate $baud_tar successfully"
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "set bmc $cpu_dev baudrate $baud_tar failed"
+        return -1
+    fi
+}
+
+# parm $1: tty device; parm $2: target baudrate; parm $3: retrytimes
+function stty_ttyScpu_baudrate()
+{
+    local ret
+    if mterm_server_running $1; then
+        restart_ttyScpu_service $1 $2 $3
+    else
+        stty_baudrate $1 $2 $3
+    fi
+    ret=$?
+    return $ret
+}
+
+# parm 1($1): previous baudrate
+function restore_original_baudrate()
+{
+    # restore original bmc console
+    if [ $g_bmc_flag == 1 ]; then
+        restart_ttySbmc_service $g_ttySbmc $g_baud_bmc_orgn $1 $g_restore_retry_times
+    fi
+    # restore original cpu console
+    if [ $g_cpu_flag == 1 ]; then
+        stty_ttyScpu_baudrate $g_ttyScpu $g_baud_bmc_orgn $g_restore_retry_times
+    fi
+    # restore original env
+    if [ $g_env_flag == 1 ]; then
+        set_env_baudrate $g_baud_bmc_orgn $g_restore_retry_times
+    fi
+    # restore original envro
+    if [ $g_envro_flag == 1 ]; then
+        restore_envro_result=$(pflash -F $g_envro_mtd -f -E -p $g_envro_image 2>/dev/null)
+        restore_envro_ret=$?
+        if [[ $restore_envro_ret == 0 ]] && [[ -n "$restore_envro_result" ]] && [[ "$restore_envro_result" != "\n" ]]; then
+            logger -t ${logger_indicate} -p DEBUG "restore original envro successfully"
+        else
+            logger -t ${logger_indicate} -p DEBUG "failed to restore original envro: $restore_envro_result"
+        fi
+    fi
+}
+
+function store_original_baudrate()
+{
+    #store bmc baudrate
+    g_baud_bmc_orgn=$(get_ttySn_baudrate $g_ttySbmc)
+    if [ $? != 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "failed to store original bmc baudrate, and exit: $g_baud_bmc_orgn"
+        return -1
+    fi
+    # store env bootargs
+    bootargs_env_orgn=$(fw_printenv bootargs 2>/dev/null)
+    g_bootargs_env_orgn=${bootargs_env_orgn#*=}
+    if [[ -z $g_bootargs_env_orgn ]];then
+        logger -t ${logger_indicate} -p DEBUG "failed to store original env bootargs, and exit: $bootargs_env_orgn"
+        return -1
+    fi
+    # store envro baudrate
+    dd if=$g_envro_mtd of=$g_envro_image 2>/dev/null
+    if [ $? != 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "failed to store original envro baudrate, and exit"
+        return -1
+    fi
+    logger -t ${logger_indicate} -p DEBUG "store original baudrate successfully: $g_baud_bmc_orgn, $g_bootargs_env_orgn, $g_envro_image"
+    return 0
+}
+
+function delete_env_image()
+{
+    if [ -e $g_env_image ]; then
+        rm $g_env_image
+    fi
+    if [ -e $g_envro_image ]; then
+        rm $g_envro_image
+    fi
+}
+
+function set_bmc_baudrate_tty_and_env()
+{
+    # set bmc console baudrate
+    restart_ttySbmc_service $g_ttySbmc $1 $g_baud_bmc_orgn $g_set_retry_times
+    s_bmc_ret=$?
+    g_bmc_flag=1
+    if [ $s_bmc_ret != 0 ]; then
+        return -1
+    fi
+
+    # Set the baudrate for the ttySn used to monitor the CPU console
+    stty_ttyScpu_baudrate $g_ttyScpu $1 $g_set_retry_times
+    s_ttyScpu_ret=$?
+    g_cpu_flag=1
+    if [ $s_ttyScpu_ret != 0 ]; then
+        return -1
+    fi
+
+    # set env
+    set_env_baudrate $1 $g_set_retry_times
+    s_env_ret=$?
+    g_env_flag=1
+    if [ $s_env_ret != 0 ]; then
+        return -1
+    fi
+    # set envro
+    set_envro_baudrate
+    s_envro_ret=$?
+    g_envro_flag=1
+    if [ $s_envro_ret != 0 ]; then
+        return -1
+    fi
+}
+
+function set_bmc_baudrate()
+{
+    # start to set bmc baudrate
+    logger -t ${logger_indicate} -p DEBUG "start to set bmc baudrate: $1"
+
+    # store original baudrate
+    store_original_baudrate
+    if [[ $? != 0 ]]; then
+        echo ERR
+        return -1
+    fi
+
+    # check current bmc baudrate
+    if [ $g_baud_bmc_orgn == $1 ]; then
+        # delete env/envro image, which may exist
+        delete_env_image
+        logger -t ${logger_indicate} -p DEBUG "current bmc baudrate: $g_baud_bmc_orgn, and end of setting bmc baudrate"
+        echo OK
+        return 0
+    fi
+
+    # set bmc baudrate
+    set_bmc_baudrate_tty_and_env $1
+    if [ $? != 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "failed to set bmc baudrate: $1, and restore the original setting"
+        restore_original_baudrate $1
+        echo ERR
+    else
+        logger -t ${logger_indicate} -p DEBUG "set bmc baudrate: $1 successfully"
+        echo OK
+    fi
+
+    # delete env/envro image, which may exist
+    delete_env_image
+
+    # the end of setting bmc baudrate
+    logger -t ${logger_indicate} -p DEBUG "end of setting bmc baudrate"
+}
+
+function set_dev_by_expect()
+{
+    # $1: device; $2: account; $3: password; $4: new baudrate; $5: old baudrate;
+    local set_log
+    local set_ret
+    set_log=$(/usr/local/bin/dev_baudrate.exp "set" $1 $2 $3 $4 $5)
+    set_ret=$?
+    if [ $set_ret -ne 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "failed to set $1 baudrate($2 $3 $4 $5), \
+            reason: $set_log"
+    fi
+    echo $set_log
+    return $set_ret
+}
+
+function set_dev_baudrate()
+{
+    if [ $# -lt 4 ]; then
+        echo "number of parameters error"
+        return -1
+    fi
+    dev=$1
+    target_baud=$2
+    account=$3
+    password=$4
+    def_account=admin
+    def_password=YourPaSsWoRd
+
+    # get current baudrate
+    get_log=$(/usr/local/bin/get-baudrate $dev)
+    get_ret=$?
+    if [ $get_ret -ne 0 ]; then
+        echo "ERR: $get_log"
+        return -1
+    fi
+    if [[ x"$get_log" =~ "unsupport" ]]; then
+        echo $get_log
+        return 0
+    fi
+    if [[ x"$get_log" == x"$target_baud" ]]; then
+        logger -t ${logger_indicate} -p DEBUG "$dev baudrate $get_log to $target_baud success"
+        echo OK
+        return 0
+    fi
+
+    current_baud=$get_log
+    set_log=$(set_dev_by_expect $dev $account $password $target_baud $current_baud)
+    set_ret=$?
+    if [[ $set_ret -ne 0 ]] && [[ x"$account" != x"$def_account" || x"$password" != x"$def_password" ]]; then
+        logger -t ${logger_indicate} -p DEBUG "retry to set $dev with $def_account/$def_password"
+        set_log=$(set_dev_by_expect $dev $def_account $def_password $target_baud $current_baud)
+        set_ret=$?
+    fi
+    if [ $set_ret -ne 0 ]; then
+        echo $set_log
+        return $set_ret
+    fi
+
+    # check current baudrate
+    logger -t ${logger_indicate} -p DEBUG "set $dev baudrate $current_baud to $target_baud done, and need to check"
+    get_log=$(/usr/local/bin/get-baudrate $dev)
+    if [[ x"$get_log" == x"$target_baud" ]]; then
+        logger -t ${logger_indicate} -p DEBUG "check done, and set $dev baudrate $current_baud to $target_baud success"
+        echo OK
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "check baudrate failed: $get_log, not $target_baud"
+        echo "ERR, current baudrate: $get_log"
+        return -1
+    fi
+}
+
+if [[ $2 != 9600 && $2 != 115200 ]]; then
+    logger -t ${logger_indicate} -p DEBUG "error baudrate: $2"
+    echo ERR
+    exit -1
+fi
+
+case $1 in
+    "bmc")
+        set_bmc_baudrate $2
+    ;;
+    "nic"*)
+        set_dev_baudrate $@
+    ;;
+    *)
+        logger -t ${logger_indicate} -p DEBUG "unknown arg: $1"
+        echo ERR
+        exit -1
+    ;;
+esac
+exit 0

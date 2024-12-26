@@ -1,0 +1,12 @@
+#
+# Local configuration file for building the OpenBMC image.
+#
+
+# Machine Selection
+MACHINE ??= "obmc-rj"
+
+# OpenBMC distro settings
+DISTRO ?= "openbmc-fb-master"
+
+DEFAULT_TIMEZONE ?= "UTC"
+BB_NO_NETWORK = "1"

@@ -1,0 +1,15 @@
+[Unit]
+Description= Global Initialize platform drivers.
+Wants=systemd-modules-load.service
+After=systemd-modules-load.service
+Before=basic.target setup_i2c.service platform_process.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/platform-driver-init.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
+

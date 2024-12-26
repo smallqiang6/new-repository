@@ -1,0 +1,16 @@
+[Unit]
+Description=EMMC EXT4 init
+DefaultDependencies=no
+Conflicts=shutdown.target
+After=tmp.mount
+Before=init-early.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/emmc-initfs.sh mount
+ExecStop=/usr/local/bin/emmc-initfs.sh umount
+SyslogIdentifier=emmc-initfs
+
+[Install]
+WantedBy=local-fs.target

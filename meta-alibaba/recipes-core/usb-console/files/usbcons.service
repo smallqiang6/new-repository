@@ -1,0 +1,11 @@
+[Unit]
+Description=USB Console Service
+
+[Service]
+ExecStart=/usr/local/bin/usbcons.sh start
+ExecStop=/usr/local/bin/usbcons.sh stop
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

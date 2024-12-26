@@ -1,0 +1,27 @@
+From 07c950cf10a8674ea2b26d60399a84633c75f893 Mon Sep 17 00:00:00 2001
+From: sdk <sdk@ruijie.com.cn>
+Date: Fri, 21 Jun 2024 10:35:03 +0800
+Subject: [PATCH 7/9] add bus8 in uboot
+
+---
+ arch/arm/dts/wb_ast2500.dts | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/arch/arm/dts/wb_ast2500.dts b/arch/arm/dts/wb_ast2500.dts
+index 258cf8bf..2f8d8c9e 100644
+--- a/arch/arm/dts/wb_ast2500.dts
++++ b/arch/arm/dts/wb_ast2500.dts
+@@ -31,6 +31,10 @@
+   status = "okay";
+ };
+ 
++&i2c8 {
++  status = "okay";
++};
++
+ &i2c13 {
+   status = "okay";
+ };
+-- 
+2.25.1
+

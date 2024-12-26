@@ -1,0 +1,1436 @@
+#!/usr/bin/env python
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+import subprocess
+import os
+import sys
+import re
+
+from product_hal.ruijieconfig import *
+import cpuparser_D1734
+
+MCA_AER_LOG_PATH = "/var/log/mce/mce_iio.log"
+MCA_AER_LOG_BACKUP_PATH = "/var/log/mce/mce_iio_backup.log"
+PRODUCT_NAME_PATH = "/etc/device/productname"
+FULLPRODUCT_NAME_PATH = "/etc/device/fullproductname"
+DATA_COLLECT_COMPLETE_MARK = "DONE"
+DATA_COLLECT_STOP_MARK = "STOP"
+CPU_D1527_CORE_NUM = 4
+CPU_D1533_CORE_NUM = 6
+CPU_D1734_CORE_NUM = 8
+
+global g_mce_type
+g_mce_type = 0
+
+"""
+1. 1:D30:F2 read register 0xEC, determine the CPU error type
+2. 1:D16:F5 read register 0xa4, 0xa8, cpu error(IERR|MCE)
+"""
+
+def usage():
+    print("usage:")
+    print("    cpuparser mce|peci")
+    exit()
+
+def get_device_name(path):
+    device_name = None
+    if not os.path.isfile(path):
+        print("%s does not exist" % path)
+        exit()
+    with open(path) as machine_file:
+        for line in machine_file:
+            device_name = line.strip()
+            break
+    return device_name
+
+"""
+1. D1527(as23-32, as23-48, as23-128)
+2. D1527:CPU 4 core
+3. D1533(as14-40d, as14-128,as24-128d)
+4. D1533:CPU 6 core
+5. return 1 for D1533, return 0 for D1527
+6. D1734(AS14-24D8Q, AS25-128Q)
+7. D1734:CPU 8 core
+"""
+def get_product_core_num():
+    D1533_list = ["AS14-40D", "AS14-128H", "AS24-128D", "AC51-48C2G", "AS15-20D4M", "AS24-128D-2-RJ"]
+    D1734_list = ["AS14-24D8Q", "AS25-128Q", "AS51-24D", "AS15-40Q"]
+    fullproductname_list = ["AS24-128D-2-RJ"]
+    global g_mce_type
+    product_name = get_device_name(PRODUCT_NAME_PATH)
+    if product_name == None:
+        print("Read product name failed")
+        exit()
+    fullproduct_name = get_device_name(FULLPRODUCT_NAME_PATH)
+    if fullproduct_name == None:
+        print("Read fullproduct name failed")
+        exit()
+    if fullproduct_name in fullproductname_list:
+        product_name = fullproduct_name
+
+    if product_name in D1533_list:
+        return CPU_D1533_CORE_NUM
+    elif product_name in D1734_list:
+        g_mce_type = 1
+        return CPU_D1734_CORE_NUM
+    else:
+        return 0
+
+# hex convert to binary
+def hex_to_bin_bit(ret_out, name):
+    try:
+        bin_bit = ""
+        if len(ret_out) == 4 or len(ret_out) == 8:
+            for k in ret_out:
+                ret = int(k, 16)
+                ret_value = '{:08b}'.format(ret)
+                bin_bit = bin_bit + ret_value[::-1]
+        else:
+            print("%s : no data(%s) need to convert to binary" % (name, ret_out))
+            exit()
+        return bin_bit
+    except Exception as e:
+        print("hex convert to binary failed : " + str(e))
+        exit()
+
+# MCE:
+# read B1:D30:F2 offset: 0xEC, to verify Caterr err
+# return 1: offset ec does not exis, or no data
+def parse_mce_err_type(data):
+    """
+    bite 31:CATERR
+    bite 30:IERR
+    bite 29:MCERR
+    bite 28:CATERR_INTERNAL
+    bite 27:IERR_INTERNAL
+    bite 26:MCERR_INTERNAL
+    """
+    output = ""
+    try:
+        dict_err = {31 : "CATERR :", 30 : "IERR :", 29 : "MCERR :",
+                    28 : "CATERR_INTERNAL :", 27 : "IERR_INTERNAL :", 26 : "MCERR_INTERNAL : "}
+        if ("ec" in data) or (len(data["ec"].split(" ")) > 0):
+            tmp_value = hex_to_bin_bit(data["ec"].split(" "), "ec")
+            for k in dict_err:
+                if int(tmp_value[k], 2):
+                    output = output + dict_err[k]
+            return output
+        else:
+            print("Unknown cpu err type")
+            return 1
+    except Exception as e:
+        print("Resolve CPU type error failed : " + str(e))
+
+# MCE: parse MSCOD bit 16-31
+def parse_core_mc_mscod(ret_value, mc, dict):
+    output = ""
+    try:
+        mc_list = ["MC0", "MC1", "MC2", "MC3", "MC7", "MC9", "MC10", "MC17", "MC18", "MC19"]
+        if mc in mc_list:
+            tmp_value = int(ret_value[16:32][::-1], 2)
+            tmp_ret = dict[mc]["MSCOD"].get(tmp_value)
+            if tmp_ret != None:
+                output = output + "MSCOD : " + tmp_ret + " : "
+        if mc == "MC4":
+            tmp_value = int(ret_value[24:32][::-1], 2)
+            tmp_put = dict[mc]["MSEC_FW"].get(tmp_value)
+            if tmp_put != None:
+                output = output + "MSEC_FW : " + tmp_put + " : "
+            tmp_value = int(ret_value[22], 2)
+            if tmp_value:
+                tmp_ret = dict[mc]["MSEC_HW"].get(tmp_value)
+                if tmp_ret != None:
+                    output = output + "MSEC_HW : " + tmp_ret + " : "
+            if int(ret_value[16:18][::-1], 2):
+                tmp_result = dict[mc]["MSEC_UC"].get(1)
+                if tmp_result != None:
+                    output = output + "MSEC_UC : " + tmp_result + " : "
+        return output
+    except Exception as e:
+        output = output + "Resolve MSCOD failed: %s" % str(e)
+        print(output)
+
+# MCE: parse MCACOD bit 0-15
+def parse_core_mc_mcacod(ret_value, mc, dict):
+    output = ""
+    try:
+        cache_err = ["MC0", "MC1", "MC3", "MC17", "MC18", "MC19"]
+        imc_err = ["MC9", "MC10"]
+        if mc in cache_err:
+            tmp_value = int(ret_value[8], 2)
+            if tmp_value:
+                tmp_ret = dict[mc]["MCACOD"].get(tmp_value)
+                if tmp_ret != None:
+                    output = output + "MCACOD : " + tmp_ret + " : "
+                else:
+                    return output
+                ret = int(ret_value[4:8][::-1], 2)
+                tmp_ret = dict[mc]["MCACOD-1"].get(ret)
+                if tmp_ret != None:
+                    output = output + tmp_ret + " : "
+                ret = int(ret_value[2:4][::-1], 2)
+                tmp_ret = dict[mc]["MCACOD-2"].get(ret)
+                if tmp_ret != None:
+                    output = output + tmp_ret + ":"
+                ret = int(ret_value[0:2][::-1], 2)
+                tmp_ret = dict[mc]["MCACOD-3"].get(ret)
+                if tmp_ret != None:
+                    output = output + tmp_ret + " : "
+        elif mc in imc_err:
+            tmp_value = int(ret_value[7], 2)
+            if tmp_value:
+                tmp_put =dict[mc]["MCCOD"].get(tmp_value)
+                if tmp_put != None:
+                    output = output + "MCACOD : " + tmp_put + " : "
+                tmp_value = int(ret_value[4:7][::-1], 2)
+                tmp_put =dict[mc]["MCCOD-1"].get(tmp_value)
+                if tmp_put != None:
+                    output = output + tmp_put + " : "
+                ret = int(ret_value[0:4][::-1], 2)
+                tmp_put =dict[mc]["MCCOD-2"].get(ret)
+                if tmp_put != None:
+                    output = output + tmp_put + " : "
+                    return output
+                tmp_put =dict[mc]["MCCOD-2"].get(0)
+                if tmp_put != None:
+                    output = output + tmp_put + " : " + ret_value[0:4][::-1]
+        elif mc == "MC7":
+            tmp_value = int(ret_value[4:8][::-1], 2)
+            tmp_ret = dict[mc]["MCCOD"].get(tmp_value)
+            if tmp_ret != None:
+                output = output + "MCCOD : " + tmp_ret + " : "
+            tmp_value = int(ret_value[0:4][::-1], 2)
+            tmp_ret = dict[mc]["MCCOD-1"].get(tmp_value)
+            if tmp_ret != None:
+                output = output + tmp_ret + " : "
+        elif mc == "MC4":
+            tmp_value = int(ret_value[0:16][::-1], 2)
+            tmp_ret = dict[mc]["MCCOD"].get(tmp_value)
+            if tmp_ret != None:
+                output = output + "MCCOD : " + tmp_ret + " : "
+        elif mc == "MC2":
+            if int(ret_value[4], 2):
+                tmp_ret = dict[mc]["MCACOD"].get(1)
+                if tmp_ret != None:
+                    output = output + "MCACOD : " + tmp_ret + " : "
+                tmp_value = int(ret_value[2:4][::-1], 2)
+                tmp_ret = dict[mc]["MCACOD-1"].get(tmp_value)
+                if tmp_ret != None:
+                    output = output + tmp_ret + " : "
+                tmp_value = int(ret_value[0:2][::-1], 2)
+                tmp_ret = dict[mc]["MCACOD-2"].get(tmp_value)
+                if tmp_ret != None:
+                    output = output + tmp_ret + " : "
+        else:
+            output = output + "%s Unknown" % mc
+        return output
+    except Exception as e:
+        output = output + "Resolve mcacod failed: %s" % str(e)
+        print(output)
+
+#MCE : joint misc| addr bit 0-64
+def joint_addr(ret_out):
+    output = "0x"
+    for k in ret_out[::-1]:
+        output = output + "%02x" % (int(k, 16))
+    return output
+
+def parse_mce_misc_mc17_18_19_addr(data, name):
+    """
+    bit[63:58] : "RTID"
+    bit[51:43] : "ORIGREQ"
+    bit[42-38] : "TORID"
+    bit[28:24] : COREID-"Core ID associated with the logged error"
+    bit23: THREADID-Thread ID associated with the logged error
+    bit[18:14] : WAY
+    bit[8:6] : ADDRMODE - 010
+    bit[5:0] : ADDRLSB
+    """
+    dict_eq = { "110010011" : "PCIe Request - Write invalidate line : ",
+                "110010100" : "PCIe Request - Write invalidate line : ",
+                "110011000" : "Cache Line Flush : ",
+                "110011100" : "PCIe Request - Invalid to Modify : ",
+                "110011110" : "PCIe Request - Read Current : ",
+                "111000100" : "Write-back Modify to Invalid : ",
+                "111000101" : "Write-back Modify to Exclusive : ",
+                "111001000" : "Invalid to Modify Request : ",
+                "111100001" : "PCIe Request - Direct Cache Access : ",
+                "111100000" : "Special Cycle : ",
+                "111100100" : "PCIe Request - NonSnoop Read : ",
+                "111100101" : "PCIe Request - NonSnoop Write : ",
+                "111100110" : "PCIe Request - NonSnoop Write : ",
+                "111110011" : "Unlock : ",
+                "111110100" : "Interrupt Acknowledge : ",
+                "111110101" : "Port Out (CFC/CF8 type transaction) : ",
+                "111110110" : "Floating Point Exception : ",
+                "111111000" : "End-of-level triggered Interrupt : ",
+                "111111001" : "Interrupt (logically addressed) : ",
+                "111111010" : "Interrupt (physically addressed) : ",
+                "111111011" : "Interrupt Priority Update : ",
+                "111111100" : "Port In (CFC/CF8 type transaction) : ",
+                "111111110" : "Split Lock : ",
+                "111111111" : "Lock : ",
+                "100000000" : "Snoop : ",
+                "100000001" : "Snoop : ",
+                "100000010" : "Snoop : ",
+                "100000100" : "Snoop : ",
+                "100001000" : "Snoop : ",
+                "100001010" : "Snoop : ",
+                "100001111" : "Prefetch Hint : ",
+                "010011011" : "LLC Victim (either EWB to memory or Evict Cache-line) : ",
+                "110000000" : "Request For Ownership : ",
+                "110000001" : "Code Read : ",
+                "110000010" : "Data Read : ",
+                "110000011" : "Set Monitor : ",
+                "110000110" : "Data Read : ",
+                "110000111" : "Partial Cacheline Read : ",
+                "110001100" : "Write Combine Invalidate Line : ",
+                "110001101" : "Write Combine Invalidate Line : ",
+                "110001110" : "Uncacheable Read : ",
+                "110001111" : "Write Invalidate Line : ",
+                "110010000" : "Prefetch - Rquest For ownership : ",
+                "110010001" : "Prefetch - Code : ",
+                "110010010" : "Prefetch - Data : ",
+            }
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        if int(ret_value[58:], 2):
+            output = "RTID(63:58) : " + ret_value[58:] + " : "
+        ret = ret_value[43:52][::-1]
+        if ret in dict_eq:
+            output = output + "ORIGREQ(43:51) : " + dict_eq[ret] + " : "
+        if int(ret_value[38:43][::-1], 2):
+            output = output + "TORID(38:42) : " + ret_value[38:43][::-1]
+        if int(ret_value[24:29][::-1], 2):
+            output = output + "COREID(24:28) : " + ret_value[24:29][::-1]
+        if int(ret_value[14:19][::-1], 2):
+            output = output + "WAY(14:18) : " + ret_value[14:19][::-1]
+        if int(ret_value[6:9][::-1], 2) == 2:
+            output = output + "ADDRMODE(6:8) : Physical Address : "
+        else:
+            output = output + "ADDRMODE(6:8) : " + ret_value[6:9][::-1] + " : "
+        if int(ret_value[0:6][::-1], 2) == 2:
+            output = output + "ADDRLSB(0:5) : " + ret_value[0:6][::-1] + " : "
+        return output
+    except Exception as e:
+        print("Parse mce misc mc17-18-19 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc9_10_addr(data, name):
+    """"
+    bit63 : MC logs-second correctable error
+    bit62 : MC logs-first correctable error
+    bit[55:51] : MC logs the second error failing rank
+    bit[50:46] : MC logs the first error failing rank
+    bit[45:30] : MC logs the second error bit mask here
+    bit[29:14]: MC logs the first error bit mask here
+    bit[13:9]: MCWrDataPar error or MCWrBEPar error
+    bit[8:6]: ADDR_MODE- 000: Segment Offset
+                         001: Linear Address
+                         010: Physical (system) Address
+                         011: Memory Address
+                         111: Generic
+    bit[5:0] : REC_ERR_LSB
+    """
+    dict_addr_mode = {"000" : "Segment Offset : ", "001": "Linear Address : ",
+                      "010" : "Physical (system) Address : ", "011": "Memory Address : ",
+                      "111" : "Generic : "}
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        if int(ret_value[63], 2):
+            output = "EXTRA_ERR_INFO(63:9) : " + "MC logs-second correctable error : "
+            if int(ret_value[51:56][::-1], 2):
+                output = output + "MC logs the second error failing rank : " + \
+                    ret_value[51:56][::-1] + " : "
+            if int(ret_value[30:46][::-1], 2):
+                output = output + "MC logs the second error bit mask here : " + \
+                    ret_value[30:46][::-1] + " : "
+        if int(ret_value[62], 2):
+            output = "EXTRA_ERR_INFO : " + "MC logs-first correctable error : "
+            if int(ret_value[51:56][::-1], 2):
+                output = output + "MC logs the first error failing rank : " + \
+                    ret_value[51:56][::-1] + " : "
+            if int(ret_value[14:30][::-1], 2):
+                output = output + "MC logs the first error bit mask here : " + \
+                    ret_value[14:30][::-1] + " : "
+        if int(ret_value[9:14][::-1], 2):
+            output = output + "MCWrDataPar error or MCWrBEPar error : " + \
+                ret_value[9:14][::-1] + ":"
+        ret = ret_value[6:9][::-1]
+        if ret in dict_addr_mode:
+            output = output + "ADDR_MODE(6:8): " + dict_addr_mode[ret]
+        if int(ret_value[0:6][::-1], 2):
+            output = output + "REC_ERR_LSB(0:5) : " + ret_value[0:6][::-1] + " : "
+        return output
+    except Exception as e:
+        print("Parse mce misc mc9-10 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc7_addr(data, name):
+    """
+    bit 51:43 - BTIDTO
+    bit 42 - MIRRORCORR
+    bit 41 - FAILOVER
+    bit 40:39 - HADBBANK 01:Critical half data bank 10: Non-critical half data bank
+                11: Both banks
+    bit 38:37 - PE 00: low priority, 01: medium priority, 10: high priority 11: critical priority
+    bit 34:29 - REQOPCODE:
+                34: Read Current Request (RDCUR)
+                33: NonSnp Request (NONSNPRD, NONSNPWR0)
+                32: Read Data Request (RDDATA, RDDATAMIG)
+                31: Write Request (NONSNPWR, WRMTO, ACKCNFLT, ACKCNFLTWBI)
+                30: Read Operation (RDCODE, RDDATA, NONSNPRD, RDINVOWN, RDCUR, RDDATAMIG)
+                29: Invalidate Operation (INVITOE)
+    bit 28:25 - RNID
+    bit 22: 17 - RTID
+    bit 15: 9 - HTID
+    """
+    output = ""
+    dict_hadbbank = {"01" : "Critical half data bank : ", "10" : "Non-critical half data bank : ",
+                     "11" : "Both banks : "}
+    list_pe = ["low priority : ", "medium priority : ", "high priority : ", "critical priority : "]
+    dict_re = {29: "Invalidate Operation (INVITOE) : ", 30 : "Read Operation (RDCODE, RDDATA, NONSNPRD, RDINVOWN, RDCUR, RDDATAMIG) : ",
+               31: "Write Request (NONSNPWR, WRMTO, ACKCNFLT, ACKCNFLTWBI) : ",
+               32: "Read Data Request (RDDATA, RDDATAMIG) : ", 33 : "NonSnp Request (NONSNPRD, NONSNPWR0) : ",
+               34: "Read Current Request (RDCUR) : "}
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        if int(ret_value[43:52][::-1], 2):
+            output = "BTIDTO(51:43) : " + ret_value[43:52][::-1] + " : "
+        if int(ret_value[42], 2):
+            output = output + "MIRRORCORR(42) : "
+        if int(ret_value[41], 2):
+            output = output + "FAILOVER(41) : "
+        ret = ret_value[39:41][::-1]
+        if ret in dict_hadbbank:
+            output = output + "HADBBANK(39:40) : " + dict_hadbbank[ret]
+        ret = int(ret_value[37:49][::-1], 2)
+        output = output + "PE(37:48) : " + list_pe[ret]
+        for k in dict_re:
+            if ret_value[k] == "1":
+                output = output + "REQOPCODE(34:29): " +  dict_re[k]
+        if int(ret_value[25:29][::-1], 2):
+            output = output + "RNID(25:28) : " + ret_value[25:29][::-1] + " : "
+        if int(ret_value[17:23][::-1], 2):
+            output = output + "RTID(22:17) : " + ret_value[17:23][::-1] + " : "
+        if int(ret_value[9:16][::-1], 2):
+            output = output + "HTID(15:9) : " + ret_value[9:16][::-1] + " : "
+        return output
+    except Exception as e:
+        print("Parse mce misc mc7 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc4_addr(data, name):
+    """
+    bit 23: 16 - CORRECTED_ERROR_COUNT
+    bit 15: 0 - ERROR_ADDRESS
+    """
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        ret = int(ret_value[16:26][::-1], 2)
+        if ret:
+            output = "CORRECTED_ERROR_COUNT(23:16) : " + str(ret) + " : "
+        if int(ret_value[0:16][::-1], 2):
+            output = output + "ERROR_ADDRESS(15:0) : " + ret_value[0:16][::-1] + " : "
+        return output
+    except Exception as e:
+        print("Parse mce misc mc4 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc3_addr(data, name):
+    """
+    bit 23 - THREAD
+    bit 22:20 - WAY
+    bit 19: 16 - SQID
+    bit 8:6 - ADDRMODE
+    bit 5:0 - RECADDRLSB
+    """
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        if int(ret_value[23], 2):
+            output = "THREAD(23) : "
+        if int(ret_value[20:23][::-1], 2):
+            output = output + "WAY(22:20) : " + ret_value[20:23][::-1] + " : "
+        if int(ret_value[16:20][::-1], 2):
+            output = output + "SQID(19:16) : " + ret_value[16:20][::-1] + " : "
+        output = output + parse_mce_misc_mc0_addr(data, name)
+        return output
+    except Exception as e:
+        print("Parse mce misc mc3 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc1_addr(data, name):
+    # ADDRESS_MODE : bit(8:6): 010
+    # IFU_ADDR_LSB : bit(5:0): 000110
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        if ret_value[6:9][::-1] == "010":
+            output = "ADDRESS_MODE(8:6) : correctable"
+        else:
+            output = "ADDRESS_MODE(8:6) : " + ret_value[6:9][::-1] + " : "
+        if ret_value[6:9][::-1] == "000110":
+            output = output + "IFU_ADDR_LSB(5:0) : correctable"
+        else:
+            output = output + "IFU_ADDR_LSB(5:0) : " + ret_value[0:6][::-1] + " : "
+        return output
+    except Exception as e:
+        print("Parse mce misc mc1 Exception returned: %s" % str(e))
+
+def parse_mce_misc_mc0_addr(data, name):
+    # ADDRESS_MODE : bit(8:6)
+    # IFU_ADDR_LSB : bit(5:0)
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data, name)
+        dict = {"000": "Segment Offset", "001": "Linear Addree", "010": "Physical Address",
+                "011": "Memory Address", "111": "Generic"}
+        ret = ret_value[6:9][::-1]
+        if ret in dict:
+            output = "ADDRESS_MODE(8:6) : " + dict[ret] + " : "
+        if int(ret_value[0:6][::-1], 2):
+            output = output + "IFU_ADDR_LSB(5:0) : " + ret_value[0:6][::-1]
+        return output
+    except Exception as e:
+        print("Parse mce misc mc0 returned: %s" % str(e))
+
+def parse_mce_misc_addr(data, name):
+    # MC2 - Reserved, does not need to parse
+    core_mc0 = ["CORE0MC0MISC", "CORE1MC0MISC", "CORE2MC0MISC", "CORE3MC0MISC", "CORE4MC0MISC", "CORE5MC0MISC"]
+    core_mc1 = ["CORE0MC1MISC", "CORE1MC1MISC", "CORE2MC1MISC", "CORE3MC1MISC", "CORE4MC1MISC", "CORE5MC1MISC"]
+    core_mc3 = ["CORE0MC3MISC", "CORE1MC3MISC", "CORE2MC3MISC", "CORE3MC3MISC", "CORE4MC3MISC", "CORE5MC3MISC"]
+    core_mc4 = ["CORE0MC4MISC"]
+    core_mc7 = ["CORE0MC7MISC"]
+    core_mc9_10 = ["CORE0MC9MISC", "CORE0MC10MISC"]
+    core_mc17_18_19 = ["CORE0MC17MISC", "CORE0MC18MISC", "CORE0MC19MISC"]
+    output = ""
+    try:
+        if name in core_mc0:
+            output = parse_mce_misc_mc0_addr(data, name)
+        elif name in core_mc1:
+            output = parse_mce_misc_mc1_addr(data, name)
+        elif name in core_mc3:
+            output = parse_mce_misc_mc3_addr(data, name)
+        elif name in core_mc4:
+            output = parse_mce_misc_mc4_addr(data, name)
+        elif name in core_mc7:
+            output = parse_mce_misc_mc7_addr(data, name)
+        elif name in core_mc9_10:
+            output = parse_mce_misc_mc9_10_addr(data, name)
+        elif name in core_mc17_18_19:
+            output = parse_mce_misc_mc17_18_19_addr(data, name)
+        else:
+            output = "%s Unknown" % name
+        return output
+    except Exception as e:
+        print("Parse mce misc addr Exception returned: %s" % str(e))
+
+#Step-1 : name = val, to judge bit63, if be 0 invalid does not parse, if be 1 valid
+#Step-2 : parse lsb bite 0-31
+#Step-3 : name = ADDRV bit 58
+#Step-4 : name = MISCV bit 59
+def parse_bank_log(data, ret_out, addr_name, misc_name, name):
+    output = ""
+    ret = 0
+    try:
+        ret_value = hex_to_bin_bit(ret_out, name)
+        if int(ret_value[63], 2) == 0:
+            ret = 1
+            return ret, output
+        output = output + parse_mce_bank_lsb(ret_value, name)
+        if int(ret_value[58], 2):
+            if (addr_name in data) and len(data[addr_name].split(" ")) > 0:
+                ret_out = data[addr_name].split(" ")
+                output = output + addr_name + " : "  + joint_addr(ret_out) + " : "
+            else:
+                output = output + "%s does not exist, or no data" % addr_name
+
+        if int(ret_value[59], 2):
+            if (misc_name in data) and (len(data[misc_name].split(" ")) > 0):
+                ret_out = data[misc_name].split(" ")
+                output = output + misc_name + " : " + joint_addr(ret_out) + " : " + parse_mce_misc_addr(ret_out, misc_name)
+            else:
+                output = output + "%s does not exist, or no data" % misc_name
+        return ret, output
+    except Exception as e:
+        print("Parse bank log Exception returned: %s" % str(e))
+
+# MCE: parse mce msb bit 38-63
+def parse_mce_bank_msb(data, list_mc):
+    """
+    bit63: Indicates (when set) that the information within the IA32_MC0_STATUS register is valid
+    if invalid does not to parse
+    bit62: "OVER"
+    bit61: "UC"
+    bit60: "EN"
+    bit59: "MISCV"
+    bit58: "ADDRV"
+    bit57: "PCC"
+    bit56: "S"
+    bit55: "AR"
+    bit54-53: "CorrErrorStatusInd" 00:No Tracking, 01:Green, 10: Yellow, 11: Reserved
+    bit53-38: CORR_ERR_COUNT Correctable error count.This is not supported for the PCU-----CORE0MC4
+    
+    """
+    output = ""
+    bank_name = {"CORE0MC0STATUS"  : {"CORE0MC0ADDR"  : "CORE0MC0MISC"},
+                 "CORE0MC1STATUS"  : {"CORE0MC1ADDR"  : "CORE0MC1MISC"},
+                 "CORE0MC2STATUS"  : {"CORE0MC2ADDR"  : "CORE0MC2MISC"},
+                 "CORE0MC3STATUS"  : {"CORE0MC3ADDR"  : "CORE0MC3MISC"},
+                 "CORE1MC0STATUS"  : {"CORE1MC0ADDR"  : "CORE1MC0MISC"},
+                 "CORE1MC1STATUS"  : {"CORE1MC1ADDR"  : "CORE1MC1MISC"},
+                 "CORE1MC2STATUS"  : {"CORE1MC2ADDR"  : "CORE1MC2MISC"},
+                 "CORE1MC3STATUS"  : {"CORE1MC3ADDR"  : "CORE1MC3MISC"},
+                 "CORE2MC0STATUS"  : {"CORE2MC0ADDR"  : "CORE2MC0MISC"},
+                 "CORE2MC1STATUS"  : {"CORE2MC1ADDR"  : "CORE2MC1MISC"},
+                 "CORE2MC2STATUS"  : {"CORE2MC2ADDR"  : "CORE2MC2MISC"},
+                 "CORE2MC3STATUS"  : {"CORE2MC3ADDR"  : "CORE2MC3MISC"},
+                 "CORE3MC0STATUS"  : {"CORE3MC0ADDR"  : "CORE3MC0MISC"},
+                 "CORE3MC1STATUS"  : {"CORE3MC1ADDR"  : "CORE3MC1MISC"},
+                 "CORE3MC2STATUS"  : {"CORE3MC2ADDR"  : "CORE3MC2MISC"},
+                 "CORE3MC3STATUS"  : {"CORE3MC3ADDR"  : "CORE3MC3MISC"},
+                 "CORE4MC0STATUS"  : {"CORE4MC0ADDR"  : "CORE4MC0MISC"},
+                 "CORE4MC1STATUS"  : {"CORE4MC1ADDR"  : "CORE4MC1MISC"},
+                 "CORE4MC2STATUS"  : {"CORE4MC2ADDR"  : "CORE4MC2MISC"},
+                 "CORE4MC3STATUS"  : {"CORE4MC3ADDR"  : "CORE4MC3MISC"},
+                 "CORE5MC0STATUS"  : {"CORE5MC0ADDR"  : "CORE5MC0MISC"},
+                 "CORE5MC1STATUS"  : {"CORE5MC1ADDR"  : "CORE5MC1MISC"},
+                 "CORE5MC2STATUS"  : {"CORE5MC2ADDR"  : "CORE5MC2MISC"},
+                 "CORE5MC3STATUS"  : {"CORE5MC3ADDR"  : "CORE5MC3MISC"},
+                 "CORE0MC4STATUS"  : {"CORE0MC4ADDR"  : "CORE0MC4MISC"},
+                 "CORE0MC7STATUS"  : {"CORE0MC7ADDR"  : "CORE0MC7MISC"},
+                 "CORE0MC9STATUS"  : {"CORE0MC9ADDR"  : "CORE0MC9MISC"},
+                 "CORE0MC10STATUS" : {"CORE0MC10ADDR" : "CORE0MC10MISC"},
+                 "CORE0MC17STATUS" : {"CORE0MC17ADDR" : "CORE0MC17MISC"},
+                 "CORE0MC18STATUS" : {"CORE0MC18ADDR" : "CORE0MC18MISC"},
+                 "CORE0MC19STATUS" : {"CORE0MC19ADDR" : "CORE0MC19MISC"},
+                 }
+    try:
+        for name in list_mc:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_out = data[name].split(" ")
+                for addr_name in bank_name[name]:
+                    ret, output = parse_bank_log(data, ret_out, addr_name, bank_name[name][addr_name], name)
+                if ret == 1:
+                    continue
+                if (output != None) and (len(output) > 0):
+                    output = name + ": " + output
+                    print(output)
+            else:
+                output = output + "%s does not exist" % name
+                print(output)
+    except Exception as e:
+        print("Parse bank msb Exception returned: %s" % str(e))
+
+#MCE: parse mce lsb bit 0-31
+def parse_mce_bank_lsb(ret_value, name):
+    """
+    1.Each core of the CPU will have its own MC[0:3]
+    2.Other MCS["MC4", "MC7", "MC9", "MC10", "MC17", "MC18", "MC19"] are Shared
+    MC0: bit31:16 - MSCOD bit 15:0 - MCACOD
+    MC1: bit31:16 - MSCOD bit 15:0 - MCACOD
+    MC2: bit31:16 - MSCOD bit 15:0 - MCACOD
+    MC3: bit31:16 - MSCOD bit 15:0 - MCACOD
+    MC4: bit31:24 - MSEC_FW bit23:20 - MSEC_HW bit 19:16 - MSEC_UC bit 15:0 - MCCOD
+    MC7: bit31:16 - MSCOD bit15:0 - MCCOD
+    MC9|MC10: bit31:16 - MSCOD bit15:0 - MCCOD
+    MC17|MC18|MC19: bit31:16 - MSCOD bit15:0 - MCCOD
+    """
+    dict_mc_info = {"MC0": {"MSCOD": {1: "Internal Error", 2: "Internal Error", 3: "Internal Error",
+                                4: "IFU Icache Data Parity/Poison Error", 5: "IFU Icache Tag Parity Error",
+                                6: "ITLB Parity Error", 7: "Internal Error", 8: "Internal Error",
+                                9: "Internal Error", 10: "Internal Error", 11: "Internal Error",
+                               12: "IFU detected incoming Poison(SRAR event based on MCACOD values)",
+                               15: "Internal Error"},
+                    "MCACOD": {1: "Cache Hierarchy Error"},
+                    "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                    "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                    "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                    },
+            "MC1": {"MSCOD": {0: "Poison SRAR Error", 16: "WBINVD or DCU detected incoming Poison",
+                              32: "APIC Error"},
+                   "MCACOD": {1: "Cache Hierarchy Error"},
+                   "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                    "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                    "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                   },
+            "MC2": {"MSCOD": {0: "Tag Parity Error", 1: "Data Parity Error", 16: "Tag Parity Error",
+                              17: "Data Parity Error"},
+                    "MCACOD": {1: "TLB Error"},
+                    "MCACOD-1" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                    "MCACOD-2" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                    },
+            "MC3": {"MSCOD": {128: "MLC Watchdog timer (3-strike) Error", 48: "Poisoned Data detected", 
+                              32: "Data Read Uncorrected error/prefetch Error",
+                              8: "MESI State Uncorrected Error", 4: "MESI State Corrected Error",
+                              2: "Tag Uncorrected Error", 1: "Tag Corrected Error",
+                              },
+                    "MCACOD": {1: "Cache Hierarchy Error"},
+                    "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                    "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                    "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                    },
+            "MC4": {"MSEC_FW": {9: "MCA_MESSAGE_CHANNEL_TIMEOUT", 19: "MCA_DMI_TRAINING_TIMEOUT",
+                                30: "MCA_VR_ICC_MAX_LESS_THAN_FUSED_ICC_MAX", 37: "MCA_SVID_COMMAND_TIMEOUT",
+                                38: "MCA_PKGC_DIRECT_WAKE_RING_TIMEOUT", 41: "MCA_VR_VOUT_MAC_LESS_THAN_FUSED_SVID",
+                                43: "MCA_PKGC_WATCHDOG_HANG_CBZ_DOWN", 44: "MCA_PKGC_WATCHDOG_HANG_CBZ_UP",
+                                68: "MCA_CRITICAL_VR_FAILED", 70: "MCA_VID_RAMP_DOWN_FAILED",
+                                73: "MCA_SVID_WRITE_REG_VOUT_MAX_FAILED", 75: "MCA_PPI_BOOT_VID_TIMEOUT",
+                                79: "MCA_SVID_COMMAND_ERROR", 82: "MCA_FIVR_CATAS_OVERVOL_FAULT",
+                                83: "MCA_FIVR_CATAS_OVERCUR_FAULT", 87: "MCA_SVID_PKGC_REQUEST_FAILED",
+                                88: "MCA_SVID_IMON_REQUEST_FAILED", 89: "MCA_SVID_ALERT_REQUEST_FAILED",
+                                98: "MCA_INVALID_PKGS_RSD_QPI", 100: "MAC_INVALID_PKG_STATE_CONFIG",
+                                103: "MCA_HA_IMC_RW_BLOCK_ACK_TIMEOUT", 107: "MCA_MSGCH_PMREQ_CMP_TIMEOUT",
+                                114: "MCA_WATCHDOG_TIMEOUT_PKGS_MASTER", 129: "MCA_RECOVERABLE_PKGS_MASTER",
+                                },
+                    "MSEC_HW": {1: "Ubox Error"},
+                    "MSEC_UC": {1: "PCU Internal error"},
+                    "MCCOD": {1026: "PCU Ubox Error", 1027: "VCU Ubox Error", 1030: "Intel TXT Ubox Error",
+                               1031: "other Ubox errors",
+                               }
+                    },
+            "MC7": {"MSCOD": {512: "BT Timeout Error", 256: "Internal Parity", 128: "Internal Parity",
+                              64: "Internal Parity", 32: "Internal Parity", 16: "RTID Error", 8: "Internal Error",
+                              4: "Partial Write Error", 2: "Data Buffer Parity Error", 1: "Memory Read Error",
+                              },
+                    "MCCOD": {9: "Data Read Error", 8: "Generic Error"},
+                    "MCCOD-1": {0: "Ch0", 1: "Ch1", 2: "Ch2", 3: "Ch3"},
+                    },
+            "MC9": {"MSCOD": {1: "DDR3 Address Parity Error", 2: "Uncorrected HA Write data Error",
+                              4: "Uncorrected HA Data Byte Enable Error", 8: "Corrected Patrol Scrub Error",
+                              16: "Uncorrected Patrol Scrub Error", 256: "IMC Write Data Buffer parity Error",
+                              512: "DDR4 Command Address Parity Error",
+                              },
+                    "MCCOD": {1: "IMC Errors"},
+                    "MCCOD-1": {0: "Generic undefined request", 1: "Memory Read Error",
+                                2: "Memory Write Error", 3: "Address/Command Error",
+                                4: "Memory Scrubbing Error"},
+                    "MCCOD-2": {0: "Channel Number", 15: "Channel not specified"},
+                    },
+            "MC10": {"MSCOD": {1: "DDR3 Address Parity Error", 2: "Uncorrected HA Write data Error",
+                              4: "Uncorrected HA Data Byte Enable Error", 8: "Corrected Patrol Scrub Error",
+                              16: "Uncorrected Patrol Scrub Error", 256: "IMC Write Data Buffer parity Error",
+                              512: "DDR4 Command Address Parity Error",
+                              },
+                    "MCCOD": {1: "IMC Errors"},
+                    "MCCOD-1": {0: "Generic undefined request", 1: "Memory Read Error",
+                                2: "Memory Write Error", 3: "Address/Command Error",
+                                4: "Memory Scrubbing Error"},
+                    "MCCOD-2": {0: "Channel Number", 15: "Channel not specified"},
+                    },
+            "MC17": {"MSCOD": {1: "UNCORRECTABLE_DATA_ERROR", 2: "UNCORRECTABLE_TAG_ERROR", 
+                               3: "SAD_ERR_WB_TO_MMIO", 4: "SAD_ERR_IA_ACCESS_TO_GSM",
+                               5: "SAD_ERR_CORRUPTING_OTHER", 6: "SAD_ERR_NON_CORRUPTING_OTHER",
+                               7: "CORRECTABLE_DATA_ERROR", 8: "MEM_POISON_DATA_ERROR",
+                               10: "PARITY_DATA_ERROR", 11: "CORE_WB_MISS_LLC",
+                               12: "TOR_TIMEOUT", 13: "Internal Error", 14: "Internal Error", 
+                               15: "Internal Error", 17: "LLC_TAG_CORR_ERR", 18: "LLC_STATE_CORR_ERR",
+                               20: "LLC_CV_CORR_ERR", 21: "LLC_CV_UNCORR_ERR", 22: "Internal Protocol Error",
+                               23: "MULTI_LLC_WAY_TAG_MATCH", 24: "REQ_RTID_TABLE_MISS_DATA",
+                               25: "REQ_RTID_TABLE_MISS_NON_DATA", 26: "RTID_TABLE_MULTIHIT_DATD",
+                               27: "RTID_TABLE_MULTHIT_NON_DATA", 28: "idi Jitter", 29: "SAD DRAM/IO Decoder Match",
+                               30: "Internal Parity Error", 31: "Internal Parity Error",
+                               },
+                     "MCACOD": {1: "Cache Hierarchy Error"},
+                     "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                     "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                     "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                     },
+             "MC18": {"MSCOD": {1: "UNCORRECTABLE_DATA_ERROR", 2: "UNCORRECTABLE_TAG_ERROR", 
+                               3: "SAD_ERR_WB_TO_MMIO", 4: "SAD_ERR_IA_ACCESS_TO_GSM",
+                               5: "SAD_ERR_CORRUPTING_OTHER", 6: "SAD_ERR_NON_CORRUPTING_OTHER",
+                               7: "CORRECTABLE_DATA_ERROR", 8: "MEM_POISON_DATA_ERROR",
+                               10: "PARITY_DATA_ERROR", 11: "CORE_WB_MISS_LLC",
+                               12: "TOR_TIMEOUT", 13: "Internal Error", 14: "Internal Error", 
+                               15: "Internal Error", 17: "LLC_TAG_CORR_ERR", 18: "LLC_STATE_CORR_ERR",
+                               20: "LLC_CV_CORR_ERR", 21: "LLC_CV_UNCORR_ERR", 22: "Internal Protocol Error",
+                               23: "MULTI_LLC_WAY_TAG_MATCH", 24: "REQ_RTID_TABLE_MISS_DATA",
+                               25: "REQ_RTID_TABLE_MISS_NON_DATA", 26: "RTID_TABLE_MULTIHIT_DATD",
+                               27: "RTID_TABLE_MULTHIT_NON_DATA", 28: "idi Jitter", 29: "SAD DRAM/IO Decoder Match",
+                               30: "Internal Parity Error", 31: "Internal Parity Error",
+                               },
+                     "MCACOD": {1: "Cache Hierarchy Error"},
+                     "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                     "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                     "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                     },
+             "MC19": {"MSCOD": {1: "UNCORRECTABLE_DATA_ERROR", 2: "UNCORRECTABLE_TAG_ERROR", 
+                               3: "SAD_ERR_WB_TO_MMIO", 4: "SAD_ERR_IA_ACCESS_TO_GSM",
+                               5: "SAD_ERR_CORRUPTING_OTHER", 6: "SAD_ERR_NON_CORRUPTING_OTHER",
+                               7: "CORRECTABLE_DATA_ERROR", 8: "MEM_POISON_DATA_ERROR",
+                               10: "PARITY_DATA_ERROR", 11: "CORE_WB_MISS_LLC",
+                               12: "TOR_TIMEOUT", 13: "Internal Error", 14: "Internal Error", 
+                               15: "Internal Error", 17: "LLC_TAG_CORR_ERR", 18: "LLC_STATE_CORR_ERR",
+                               20: "LLC_CV_CORR_ERR", 21: "LLC_CV_UNCORR_ERR", 22: "Internal Protocol Error",
+                               23: "MULTI_LLC_WAY_TAG_MATCH", 24: "REQ_RTID_TABLE_MISS_DATA",
+                               25: "REQ_RTID_TABLE_MISS_NON_DATA", 26: "RTID_TABLE_MULTIHIT_DATD",
+                               27: "RTID_TABLE_MULTHIT_NON_DATA", 28: "idi Jitter", 29: "SAD DRAM/IO Decoder Match",
+                               30: "Internal Parity Error", 31: "Internal Parity Error",
+                               },
+                     "MCACOD": {1: "Cache Hierarchy Error"},
+                     "MCACOD-1" : {0: "Generic Error", 1: "Generic Read", 2: "Generic Write",
+                                 3: "Data Read", 4: "Data Write", 5: "Instruction Fetch",
+                                 6: "Prefetch", 7: "Eviction", 8: "Snoop",
+                                 },
+                     "MCACOD-2" : {0: "Instruction", 1: "Data", 2: "Generic TT", 3: "Reserved TT"},
+                     "MCACOD-3" : {0: "Level 0", 1: "Level 1", 2: "Level 2", 3: "Generic LL"},
+                     },
+            }
+    mc_core = { "CORE0MC0STATUS" : "MC0", "CORE0MC1STATUS" : "MC1", "CORE0MC2STATUS" : "MC2",
+                "CORE0MC3STATUS" : "MC3", "CORE1MC0STATUS" : "MC0", "CORE1MC1STATUS" : "MC1",
+                "CORE1MC2STATUS" : "MC2", "CORE1MC3STATUS" : "MC3", "CORE2MC0STATUS" : "MC0",
+                "CORE2MC1STATUS" : "MC1", "CORE2MC2STATUS" : "MC2", "CORE2MC3STATUS" : "MC3",
+                "CORE3MC0STATUS" : "MC0", "CORE3MC1STATUS" : "MC1", "CORE3MC2STATUS" : "MC2",
+                "CORE3MC3STATUS" : "MC3", "CORE4MC0STATUS" : "MC0", "CORE4MC1STATUS" : "MC1", 
+                "CORE4MC2STATUS" : "MC2", "CORE4MC3STATUS" : "MC3", "CORE5MC0STATUS" : "MC0",
+                "CORE5MC1STATUS" : "MC1", "CORE5MC2STATUS" : "MC2", "CORE5MC3STATUS" : "MC3",
+                "CORE0MC4STATUS" : "MC4","CORE0MC7STATUS" : "MC7", "CORE0MC9STATUS" : "MC9", 
+                "CORE0MC10STATUS" : "MC10", "CORE0MC17STATUS" : "MC17",
+                "CORE0MC18STATUS" : "MC18", "CORE0MC19STATUS" : "MC19"
+                }
+    output = ""
+    try:
+        output = parse_core_mc_mscod(ret_value, mc_core[name], dict_mc_info)
+        output = output + parse_core_mc_mcacod(ret_value, mc_core[name], dict_mc_info)
+        return output
+    except Exception as e:
+        return output + "Resolve CATERR failed: %s" % str(e)
+
+def parse_mce_ierr_err(data, name, dict_info, dict_mc, err_type):
+    try :
+        output = ""
+        if (name in data) and (len(data[name].split(" ")) > 0):
+            tmp_value = hex_to_bin_bit(data[name].split(" "), name)
+        else:
+            output = "%s does not exist, or no data" % name
+            print(output)
+            return
+        if int(tmp_value[8], 2):
+            output = err_type + " : "
+            core_type = tmp_value[0:8][::-1]
+            if core_type in dict_info:
+                output = output + dict_info[core_type]
+                print(output)
+                core_type = dict_info[core_type]
+                if core_type != "IIO" : # "IIO" need to next parse
+                    parse_mce_bank_msb(data, dict_mc[core_type])
+                else:
+                    print(output)
+    except Exception as e:
+        print(output + "Resolve mce-ierr err type  failed: %s" % str(e))
+
+#MCE: parse mce ierr form a4(ierr) a8(mce)
+def parse_mce_ierr(data):
+    """
+    1.CPU has four cores(core[0:3])
+    2.FirstIerrSrcId or FirstMCerrSrcId bite[0:7] to judge core type
+    bit 8: FirstIerrSrcValid - a4
+    bit 8: FirstMCerrSrcValid -a8
+    """
+    dict_info = {
+                "10000000" : "CORE0", "10000100" : "CORE1", "10001000" : "CORE2", "10001100" : "CORE3",
+                "01000100" : "PCU",   "00000001" : "IMC_CH0", "00000101" : "IMC_CH1", "00000110": "IMC_BOTH",
+                "00111100" : "HA", "01111110": "IIO"
+           }
+    dict_mc = { "CORE0" : ["CORE0MC0STATUS", "CORE0MC1STATUS", "CORE0MC2STATUS", "CORE0MC3STATUS"],
+                "CORE1" : ["CORE1MC0STATUS", "CORE1MC1STATUS", "CORE1MC2STATUS", "CORE1MC3STATUS"],
+                "CORE2" : ["CORE2MC0STATUS", "CORE2MC1STATUS", "CORE2MC2STATUS", "CORE2MC3STATUS"],
+                "CORE3" : ["CORE3MC0STATUS", "CORE3MC1STATUS", "CORE3MC2STATUS", "CORE3MC3STATUS"],
+                "PCU" : ["CORE0MC4STATUS"],
+                "IMC_BOTH" : ["CORE0MC9STATUS", "CORE0MC10STATUS"],
+                "IMC_CH0" : ["CORE0MC9STATUS"],
+                "IMC_CH1" : ["CORE0MC10STATUS"],
+                "HA" : ["CORE0MC7STATUS"],
+        }
+    dict_D1533_core = {"10010000" : "CORE4", "10010100" : "CORE5"}
+    dict_D1533_info = {
+                "CORE4" : ["CORE4MC0STATUS", "CORE4MC1STATUS", "CORE4MC2STATUS", "CORE4MC3STATUS"],
+                "CORE5" : ["CORE5MC0STATUS", "CORE5MC1STATUS", "CORE5MC2STATUS", "CORE5MC3STATUS"],
+        }
+    # parse "a4" ---ierr
+    # parse "a8" ---mce
+    output = ""
+    ret = get_product_core_num()
+    if ret == CPU_D1533_CORE_NUM:
+        dict_mc = dict(dict_mc, **dict_D1533_info)
+        dict_info = dict(dict_info, **dict_D1533_core)
+    dict_mce_ierr = {"a4" : "IERR", "a8" : "MCE"}
+    try:
+        for name in dict_mce_ierr:
+            parse_mce_ierr_err(data, name, dict_info, dict_mc, dict_mce_ierr[name])
+    except Exception as e:
+        output = output + "Resolve IERR or MCE failed: %s" % str(e)
+        print(output)
+
+# MCE: parse mce arr err type
+def parse_mce_aer(value):
+    output = parse_mce_err_type(value)
+    if output == 1:
+        return
+    elif output == None or len(output) == 0:
+        print("No abnormality")
+        return
+    else:
+        print(output)
+        parse_mce_ierr(value)
+
+# PECI: parse peci memory err, bit 26
+def parse_peci_memory_err(data):
+    output = ""
+    dict_mie= {
+               "VPP": "vpp_err_sts : ",
+               "MI": "mi_err_st_log : ",
+               "MIFFHDR_38C": "Miscellaneous Fatal First Error Header Log : Bit 31:0 of header log : ",
+               "MIFFHDR_390": "Miscellaneous Fatal First Error Header Log : Bit 63:32 of header log : ",
+               "MIFFHDR_394": "Miscellaneous Fatal First Error Header Log : Bit 95:64 of header log : ",
+               "MIFFHDR_398": "Miscellaneous Fatal First Error Header Log : Bit 127:96 of header log : ",
+               "MINFHD_3A4": "Miscellaneous Non-Fatal First Error(FERR) status : Bit 31:0 of header log : ",
+               "MINFHD_3A8": "Miscellaneous Non-Fatal First Error(FERR) status : Bit 63:32 of header log : ",
+               "MINFHD_3AC": "Miscellaneous Non-Fatal First Error(FERR) status : Bit 95:64 of header log : ",
+               "MINFHD_3B0": "Miscellaneous Non-Fatal First Error(FERR) status : Bit 127:96 of header log : ",
+               "MIERRST" : "Miscellaneous Error Status : ",
+               "MIFFERRST" : "Miscellaneous Fatal First Error(FERR) Status : ",
+               "MIFNERRST" : "Miscellaneous Fatal Nest Error(FERR) Status : ",
+               "MINFERRST" : "Miscellaneous Non-Fatal First Error(FERR) Status : ",
+               "MINNERRST" : "Miscellaneous Non-Fatal Nest Error(FERR) Status : ",
+               }
+    # parse MIERRST
+    try:
+        if ("MIERRST" in data) and (len(data["MIERRST"].split(" ")) > 0):
+            ret_value = hex_to_bin_bit(data["MIERRST"].split(" "), "MIERRST")
+            if int(ret_value[3], 2):
+                output = output + dict_mie["MIERRST"] + dict_mie["VPP"]
+        else:
+            output = "MIERRST does not exist, no data"
+        # parse MIFFERRST\MIFNERRST, bit 0-10, default 000h
+        name_attr = ["MIFFERRST", "MIFNERRST", "MINFERRST", "MINNERRST"]
+        for name in name_attr:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+                if int(ret_value[0:11][::-1], 2):
+                    output = output + dict_mie[name] + dict_mie["MI"]
+            else:
+                output = "%s does not exist, or no data" % name
+        # parse MIFFHDR_38C\MIFFHDR_390\MIFFHDR_394\MIFFHDR_398, default 000h
+        name_attr = ["MIFFHDR_38C", "MIFFHDR_390", "MIFFHDR_394", "MIFFHDR_398", "MINFERRST", "MINFHD_3A4",\
+                    "MINFHD_3A8", "MINFHD_3AC", "MINFHD_3B0"]
+        for name in name_attr:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+                if int(ret_value[0:8][::-1], 2) or int(ret_value[8:16][::-1], 2) \
+                        or int(ret_value[16:24][::-1], 2) or int(ret_value[24:][::-1], 2):
+                    output = output + dict_mie[name]
+            else:
+                output = "%s does not exist, no data" % name
+        return output
+    except Exception as e:
+        output = output + "Parse memory err failed: %s" % str(e)
+        print(output)
+
+# PECI: parse peci irpo, bit 1:0
+def parse_peci_irpo(data):
+    """
+    IRP1ER_2BC|IRP0ER_23C|IRP0ER_238|IRP1ER_2B8|IRP0ER_250|IRP1ER_2D0:
+    bit14: protocol_parity_error--(Error Code 0xDB)
+    bit13: protocol_qt_overflow_underflow--(Error Code 0xDA)
+    bit10: protocol_rcvd_unexprsp--(Error Code 0xD7)
+    bit6: csr_acc_32b_unaligned--(Error Code 0xC3)
+    bit5: wrcache_uncecc_error_cs1--(Error Code 0xC2)
+    bit4: wrcache_uncecc_error_cs0--(Error Code 0xC2)
+    bit3: protocol_rcvd_poison--(Error Code 0xC1)
+    bit2: wrcache_correcc_error_cs1--(Error Code 0xB4)
+    bit1: wrcache_correcc_error_cs0--(Error Code 0xB4)
+    """
+    output = ""
+    dict_info = {
+                14: "protocol_parity_error--(Error Code 0xDB) : ",
+                13: "protocol_qt_overflow_underflow--(Error Code 0xDA) : ",
+                10: "protocol_rcvd_unexprsp--(Error Code 0xD7) : ",
+                 6: "csr_acc_32b_unaligned--(Error Code 0xC3) : ",
+                 5: "wrcache_uncecc_error_cs1--(Error Code 0xC2) : ",
+                 4: "wrcache_uncecc_error_cs0--(Error Code 0xC2) : ",
+                 3: "protocol_rcvd_poison--(Error Code 0xC1) : ",
+                 2: "wrcache_correcc_error_cs1--(Error Code 0xB4) : ",
+                 1: "wrcache_correcc_error_cs0--(Error Code 0xB4) : ",
+            }
+    dict_dword = {
+            "IRP0HD_258": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the first DWORD of the header on an error condition : ",
+            "IRP0HD_25C": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the second DWORD of the header on an error condition : ",
+            "IRP0HD_260": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the third DWORD of the header on an error condition : ",
+            "IRP0HD_264": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the fourth DWORD of the header on an error condition : ",
+            "IRP1HD_2D8": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the first DWORD of the header on an error condition : ",
+            "IRP1HD_2DC": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the second DWORD of the header on an error condition : ",
+            "IRP1HD_2E0": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the third DWORD of the header on an error condition : ",
+            "IRP1HD_2E4": "IRP Protocol Non-Fatal First Error Header Log : " \
+                "Logs the fourth DWORD of the header on an error condition : ",
+            "IRP0HD_240": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the first DWORD of the header on an error condition : ",
+            "IRP0HD_244": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the second DWORD of the header on an error condition : ",
+            "IRP0HD_248": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the third DWORD of the header on an error condition : ",
+            "IRP0HD_24C": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the fourth DWORD of the header on an error condition : ",
+            "IRP1HD_2C0": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the first DWORD of the header on an error condition : ",
+            "IRP1HD_2C4": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the second DWORD of the header on an error condition : ",
+            "IRP1HD_2C8": "IRP Protocol Fatal First Error Header Log : " \
+                "Logs the third DWORD of the header on an error condition : ",
+            "IRP1HD_2CC": "IRP Protocol Fatal First Error Header Log : "\
+                "Logs the fourth DWORD of the header on an error condition : ",
+        }
+    dict_irpp = {"IRP0ER_250" : "IRP Protocol Non-Fatal First Status : ",
+                 "IRP0ER_2D0" : "IRP Protocol Non-Fatal First Status : ",
+                 "IRP0ER_238" : "IRP Protocol Fatal First Status : ",
+                 "IRP0ER_2B8" : "IRP Protocol Fatal First Status : ",
+                 "IRP0ER_23C" : "IRP Protocol Fatal Next Status : ",
+                 "IRP0ER_2BC" : "IRP Protocol Fatal Next Status : ",
+        }
+    dict_addr = {"parity" : {1 : 0x40}, "qt" : {1 : 0x20}, "rcvd_unexprsp" : {1 : 0x04},
+                 "csr" : {0 : 0x40}, "uncecc_cs1" : {0 : 0x20}, "uncecc_cs0" : {0 : 0x10},
+                 "rcvd_poison" : {0 : 0x08}, "correcc_cs1" : {0 : 0x04}, "correcc_cs0" : {0 : 0x02},
+                 }
+    name_irp0 = ["IRP1ER_2BC", "IRP0ER_23C", "IRP0ER_238", "IRP1ER_2B8", "IRP0ER_250", "IRP1ER_2D0"]
+    name_irp1 = ["IRP0HD_258", "IRP0HD_25C", "IRP0HD_260", "IRP0HD_264", "IRP1HD_2D8", "IRP1HD_2DC",
+                 "IRP1HD_2E0", "IRP0HD_240", "IRP0HD_244", "IRP0HD_248", "IRP0HD_24C", "IRP1HD_2C0",
+                 "IRP1HD_2C4", "IRP1HD_2C8", "IRP1HD_2CC"]
+    try:
+        for name in name_irp0:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+            else:
+                output = "%s does not exist, no data" % name
+                continue
+            for k in dict_info:
+                if int(ret_value[k], 2):
+                    output = output + dict_irpp[name] + dict_info[k]
+        for name in name_irp1:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+                if int(ret_value[0:8][::-1], 2) or int(ret_value[8:16][::-1], 2) \
+                        or int(ret_value[16:24][::-1], 2) or int(ret_value[24:][::-1], 2):
+                    output = output + dict_dword[name]
+            else:
+                output = "%s does not exist, no data" % name
+        return output
+    except Exception as e:
+        output = output + "Parse irpo err failed: %s" % str(e)
+        print(output)
+
+def parse_peci_log(ret_value, dict_info):
+    output = ""
+    for k in dict_info:
+        if int(ret_value[k], 2):
+            output = output + dict_info[k]
+    return output
+
+# PECI: parse peci corer, bit 25:6
+def parse_peci_corer_err(data, name):
+    """
+    bit13: "non_fatal"
+    bit12: "time_out"
+    bit8: "rollover"
+    bit7: "dllp"
+    bit6: "tlp"
+    bit0: "error"
+    """
+    dict_info = {
+                13: "Correctable Error Status : advisory_non_fatal_error_status  : ",
+                12: "Correctable Error Status : replay_timer_time_out_status : ",
+                 8: "Correctable Error Status : replay_num_rollover_status : ",
+                 7: "Correctable Error Status : bad_dllp_status : ",
+                 6: "Correctable Error Status : bad_tlp_status : ",
+                 0: "Correctable Error Status : receiver_error_status : "
+        }
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data.split(" "), name)
+
+        return parse_peci_log(ret_value, dict_info)
+    except Exception as e:
+        output = output + "parse peci corer_err failed: %s" % str(e)
+        print(output)
+
+def parse_peci_uncerrest_err(data, name):
+    """
+    bit21: "acs"
+    bit20: "request"
+    bit19: "ecrc"
+    bit18: "m_tlp"
+    bit17: "overflow"
+    bit16: "unexpected"
+    bit15: "abort"
+    bit14: "time_out"
+    bit13: "flow"
+    bit12: "p_tlp"
+    bit5: "down_error"
+    bit4: "data_link"
+    """
+    dict_info = {
+                21: "Uncorrected Error Status : acs_violation_status  : ",
+                20: "Uncorrected Error Status : received_an_unsupported_request : ",
+                19: "Uncorrected Error Status : ecrc_error_status : ",
+                18: "Uncorrected Error Status : malformed_tlp_status : ",
+                17: "Uncorrected Error Status : receiver_buffer_overflow_status : ",
+                16: "Uncorrected Error Status : unexpected_completion_status : ",
+                15: "Uncorrected Error Status : completer_abort_status  : ",
+                14: "Uncorrected Error Status : completion_time_out_status : ",
+                13: "Uncorrected Error Status : flow_control_protocol_error_status : ",
+                12: "Uncorrected Error Status : poisoned_tlp_status : ",
+                 5: "Uncorrected Error Status : surprise_down_error_stat : ",
+                 4: "Uncorrected Error Status : data_link_protocol_error : "
+        }
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data.split(" "), name)
+
+        return parse_peci_log(ret_value, dict_info)
+    except Exception as e:
+        output = output + "parse peci uncerrest_err failed: %s" % str(e)
+        print(output)
+
+def parse_peci_devsts_err(data, name):
+    """
+    bit5: "transactions"
+    bit4: "aux"
+    bit3: "request"
+    bit2: "fatal_error"
+    bit1: "non_fatal_error"
+    bit0: "error"
+    """
+    dict_info = {
+                5: "Device Status Register : transactions_pending--Does not apply to Root/DMI ports  : ",
+                4: "Device Status Register : aux_power_detected--Does not apply to IIO : ",
+                3: "Device Status Register : unsupported_request_detected--This bit indicates that the root port port" \
+                    "detected an Unsupported Request : ",
+                2: "Device Status Register : fatal_error_detected--This bit indicates that a fatal (uncorrectable)" \
+                    "error is detected by the root port : ",
+                1: "Device Status Register : non_fatal_error_detected--This bit gets set if a non-fatal " \
+                   "uncorrectable error is detected by the root port : ",
+                0: "Device Status Register : correctable_error_detected--This bit gets set if a correctable error is" \
+                   "detected by the root port : ",
+        }
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data.split(" "), name)
+
+        return parse_peci_log(ret_value, dict_info)
+    except Exception as e:
+        output = output + "parse peci devsts_err failed: %s" % str(e)
+        print(output)
+
+def parse_peci_xpglb_err(data, name):
+    """
+    bit2: "PCI Express Global Error status : correctable"
+    bit1: "PCI Express Global Error status : non_fatal_error"
+    bit0: "PCI Express Global Error status : fatal_error"
+    """
+    dict_info = {
+                2: "PCI Express Global Error status : pcie_aer_correctable_error : ",
+                1: "PCI Express Global Error status : pcie_aer_non_fatal_error : ",
+                0: "PCI Express Global Error status : pcie_aer_fatal_error : ",
+        }
+    output = ""
+    try:
+        ret_value = hex_to_bin_bit(data.split(" "), name)
+
+        return parse_peci_log(ret_value, dict_info)
+    except Exception as e:
+        output = output + "parse peci xpglb_err failed: %s" % str(e)
+        print(output)
+
+# PECI: parse peci corer, bit 25:6
+def parse_peci_rst(data):
+    name_unce = ["UNCER_1_0", "UNCER_1_1", "UNCER_3_0", "UNCER_3_1", "UNCER_3_2", "UNCER_3_3"]
+    name_core = ["CORER_1_0", "CORER_1_1", "CORER_3_0", "CORER_3_1", "CORER_3_2", "CORER_3_3"]
+    name_devsts = ["DEVSTS_1_0", "DEVSTS_1_1", "DEVSTS_3_0", "DEVSTS_3_1", "DEVSTS_3_2", "DEVSTS_3_3"]
+    name_xpglb = ["XPGLB_1_0", "XPGLB_1_1", "XPGLB_3_0", "XPGLB_3_1", "XPGLB_3_2", "XPGLB_3_3"]
+    try:
+        output = ""
+        for name in name_unce :
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                output = output + parse_peci_uncerrest_err(data[name], name)
+            else:
+                output = "%s does not exist" % name
+        for name in name_core:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                output = output + parse_peci_corer_err(data[name], name)
+            else:
+                output = "%s does not exist" % name
+        for name in name_devsts:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                output = output + parse_peci_devsts_err(data[name], name)
+            else:
+                output = "%s does not exist" % name
+        for name in name_xpglb:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                output = output + parse_peci_xpglb_err(data[name], name)
+            else:
+                output = "%s does not exist" % name
+        return output
+    except Exception as e:
+        output = output + "Parse rst err failed: %s" % str(e)
+        print(output)
+
+# PECI: parse iio code, bit 5
+def parse_iio_code(data):
+    """
+    IIOFFERRST|IIOFNERRST|IIONFERRST|IIONNERRST:
+    6:0 : ioh_core_error_status_log
+    """
+    output = ""
+    dict_info = {
+            "IOH": "ioh_core_error_status_log : ",
+            "IIOFFERRHD_30C": "IIO core Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 31:0 of iiofferrhd[127:0]  : ",
+            "IIOFFERRHD_310": "IIO core Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 63:32 of iiofferrhd[127:0] : ",
+            "IIOFFERRHD_314": "IIO core Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 95:64 of iiofferrhd[127:0] : ",
+            "IIOFFERRHD_318": "IIO core Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 127:96 of iiofferrhd[127:0] : ",
+            "IIONFHD_324": "IIO core Non-Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 31:0 of iionferrhd[127:0] : ",
+            "IIONFHD_328": "IIO core Non-Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 63:32 of iionferrhd[127:0] : ",
+            "IIONFHD_32C": "IIO core Non-Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 95:64 of iionferrhd[127:0] : ",
+            "IIONFHD_330": "IIO core Non-Fata First Error Header Log : " \
+                "ioh_core_error_header_log--Bits 127:96 of iionferrhd[127:0] : "
+        }
+    dict_iio = {"IIOFFERRST" : "IIO core Fata First Error(FERR) Status : ",
+                "IIOFNERRST" : "IIO core Fata Next Error(FERR) Status : ",
+                "IIONNERRST" : "IIO core Non-Fata Next Error(FERR) Status : ",
+                "IIONFERRST" : "IIO core Non-Fata First Error(FERR) Status : ",
+        }
+    name_attr = ["IIOFFERRST", "IIOFNERRST", "IIONNERRST", "IIONFERRST"]
+    name_iio = ["IIOFFERRHD_30C", "IIOFFERRHD_310", "IIOFFERRHD_314", "IIOFFERRHD_318",
+                "IIONFHD_324", "IIONFHD_328", "IIONFHD_32C", "IIONFHD_330"]
+    try:
+        for name in name_attr:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+                if int(ret_value[0:7][::-1], 2):
+                    output = output + dict_iio[name] + dict_info["IOH"]
+            else:
+                output = "%s does not exist, no data" % name
+        for name in name_iio:
+            if (name in data) and (len(data[name].split(" ")) > 0):
+                ret_value = hex_to_bin_bit(data[name].split(" "), name)
+                if int(ret_value[0:8][::-1], 2) or int(ret_value[8:16][::-1], 2) \
+                        or int(ret_value[16:24][::-1], 2) or int(ret_value[24:][::-1], 2):
+                    output = output + dict_info[name]
+            else:
+                output = "%s does not exist, no data" % name
+        return output
+    except Exception as e:
+        output = output + "Parse iio code failed: %s" % str(e)
+        print(output)
+
+# PECI:  parse specific types of errors
+def parse_peci_err_type(data, name):
+    """
+    bit26:"mc"
+    bit25:"mtd"
+    bit24:"mi"
+    bit23:"ioh"
+    bit22:"Reserved"
+    bit21:"Reserved"
+    bit20:"dmi"
+    bit15:"pcie10"
+    bit14:"pcie9"
+    bit13:"pcie8"
+    bit12:"pcie7"
+    bit11:"pcie6"
+    bit10:"pcie5"
+    bit9:"pcie4"
+    bit8:"pcie3"
+    bit7:"pcie2"
+    bit6:"pcie1"
+    bit5:"pcie0"
+    bit1: "csi1"
+    bit0: "csi0"
+    """
+    dict_rst = {"GNERRST" : "Global Non-fatal Error Status : ",
+                "GFERRST" : "Global Fatal Error Status : ",
+                "GCERRST" : "Global Corrected Error Status : ",
+                "GFFERRST" : "Global Fatal FERR (First ERROR) Status : ",
+                "GFNERRST" : "Global Fatal FERR (Next ERROR) Status : ",
+                "GNFERRST" : "Global Non-Fatal FERR (First ERROR) Status : ",
+                "GNNERRST" : "Global Non-Fatal FERR (Next ERROR) Status : ",
+                "GCFERRST" : "Global Correctable FERR (First ERROR) Status : ",
+                "GCNERRST" : "Global Correctable FERR (Next ERROR) Status : ",
+    }
+    dict_err = {
+            26: "Memory Controller Error Mask : ",
+            25: "Intel VT-d Error Mask : ",
+            24: "Miscellaneous Error Mask : ",
+            23: "IIO Core Error Enable : ",
+            20: "DMI Error Enable : ",
+            15: "Port 3d PCIe* logical port has detected an error : ",
+            14: "Port 3c PCIe* logical port has detected an error : ",
+            13: "Port 3b PCIe* logical port has detected an error : ",
+            12: "Port 3a PCIe* logical port has detected an error : ",
+            11: "Port 2d PCIe* logical port has detected an error : ",
+            10: "Port 2c PCIe* logical port has detected an error : ",
+            9: "Port 2b PCIe* logical port has detected an error : ",
+            8: "Port 2a PCIe* logical port has detected an error : ",
+            7: "Port 1b PCIe* logical port has detected an error : ",
+            6: "Port 1a PCIe* logical port has detected an error : ",
+            5: "Port 0 PCIe* logical port has detected an error : ",
+            1: "IRP1 Coheren Interface Error : ",
+            0: "IRP0 Coheren Interface Error : ",
+        }
+    try:
+        ret = 0
+        output = ""
+        if (name in data) and (len(data[name].split(" ")) > 0):
+            ret_value = hex_to_bin_bit(data[name].split(" "), name)
+        else:
+            output = "%s does not exist, no data" % name
+            return output
+        for k in dict_err:
+            if int(ret_value[k], 2):
+                output = output + dict_err[k]
+                ret = 1
+        if ret:
+            output = name + " : " + dict_rst[name] + output
+        return output
+    except Exception as e:
+        output = output + "Parse peci err type failed: %s" % str(e)
+        print(output)
+
+def parse_peci_irpo_iio_rst(data):
+    try:
+        output = ""
+        # bit 26 for memory
+        output = parse_peci_memory_err(data)
+        if (output != None) and len(output) > 0:
+            print(output)
+        # bit[25:6] for peci rst
+        output = ""
+        output = parse_peci_rst(data)
+        if (output != None) and len(output) > 0:
+            print(output)
+        # bit5 for iio code
+        output = ""
+        output = parse_iio_code(data)
+        if (output != None) and len(output) > 0:
+            print(output)
+        # bit[1:0] for peci irpo
+        output = ""
+        output = parse_peci_irpo(data)
+        if (output != None) and len(output) > 0:
+            print(output)
+    except Exception as e:
+        output = output + "parse peci irpo iio rst failed: %s" % str(e)
+        print(output)
+
+# PECI: parse peci err type--(correctable error, non-fatal error, fatal error)
+def parse_peci_iio(value):
+    # value = 1, need to parse Memory Controller Error Status
+    try:
+        ret = 0
+        dict_me = ["GNERRST", "GFERRST", "GCERRST"]
+        dict_attr = ["GFFERRST" , "GFNERRST" , "GNFERRST" , "GNNERRST" , "GCFERRST" , "GCNERRST"]
+        for name in dict_me:
+            output = ""
+            output = parse_peci_err_type(value, name)
+            if (output != None) and len(output) > 0:
+                ret = 1
+                print(output)
+        for name in dict_attr:
+            output = ""
+            output = output + parse_peci_err_type(value, name)
+            if (output != None) and len(output) > 0:
+                ret = 1
+                print(output)
+        if ret == 0:
+            print("No abnormality")
+            return
+        parse_peci_irpo_iio_rst(value)
+    except Exception as e:
+        output = output + "Parse iio err failed: %s" % str(e)
+        print(output)
+
+def import_JSONparserFile(filepath):
+    output = ""
+    dict_ver = {}
+    if os.path.exists(filepath):
+        if not os.path.getsize(filepath):
+            output = filepath + " is empty"
+    else:
+        output = filepath + " not be exist"
+    if len(output) == 0:
+        dict_ver = platcomutil.JSONparserFile(filepath)
+    return dict_ver, output
+
+if __name__ == "__main__":
+    # file(/var/log/mce/mce_iio.log) exists and does not empty
+    """
+    cpuparser mce|peci
+    """
+    output = ""
+    invalid = False
+    try:
+        dict_ver, output = import_JSONparserFile(MCA_AER_LOG_PATH)
+        if len(output) != 0:
+            print(output)
+            usage()
+        if DATA_COLLECT_COMPLETE_MARK not in dict_ver and DATA_COLLECT_STOP_MARK not in dict_ver:
+            print("Incomplete data, please wait to try again...")
+            exit()
+        if DATA_COLLECT_STOP_MARK in dict_ver:
+            invalid = True
+        if invalid:
+            dict_ver, output = import_JSONparserFile(MCA_AER_LOG_BACKUP_PATH)
+            if len(output) != 0:
+                print("Currently invalid data, and it will not be parsed")
+                exit()
+            else:
+                print("Currently invalid data, the most recent valid data will be parsed")
+        try:
+            args = platcomutil.Argparser(['option'], [str], ['Action: mce|peci'], [False])
+            get_product_core_num()
+            if args.option == "mce":
+                if g_mce_type == 0:
+                    parse_mce_aer(dict_ver)
+                else:
+                    cpuparser_D1734.parse_mce_aer_D1734(dict_ver)
+            elif args.option == "peci":
+                if g_mce_type == 0:
+                    parse_peci_iio(dict_ver)
+                else:
+                    cpuparser_D1734.parse_peci_D1734(dict_ver)
+            else:
+                print("Parameter error")
+                usage()
+        except Exception as e:
+            print("Args Exception returned: %s" % str(e))
+    except Exception as e:
+        print("Error returned: " + str(e))
+

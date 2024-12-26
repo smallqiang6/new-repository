@@ -1,0 +1,120 @@
+From 094ebcd4f88d5100d4cb22470b802fe99a3bb1c5 Mon Sep 17 00:00:00 2001
+From: wanganman <wanganman@ruijie.com.cn>
+Date: Mon, 19 Aug 2024 15:34:14 +0800
+Subject: [PATCH 9/9] Summary:(fix-bug-53134-avoid)
+
+BranchName: facebook-meta-whitebox-master
+CAFID:N202408192992
+BUGID:
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+---
+ board/wb-obmc/ast/ast-common.h |  1 +
+ board/wb-obmc/ast/ast-g5.c     | 41 ++++++++++++++++++++++++++++++++++
+ drivers/net/ftgmac100.c        | 10 +++++++--
+ 3 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/board/wb-obmc/ast/ast-common.h b/board/wb-obmc/ast/ast-common.h
+index 6903d189..f053d604 100644
+--- a/board/wb-obmc/ast/ast-common.h
++++ b/board/wb-obmc/ast/ast-common.h
+@@ -38,6 +38,7 @@ typedef struct dev_info_s {
+     int fru_mac_extra_index;
+     int mac_increased;                     /* The BMC MAC address increment of the BASE MAC address. */
+     char syseeprom_type[PRODUCT_INFO_LEN]; /* syseeprom type such as:onie-tlv, sysfru-a, sysfru-b */
++    int fix_53134_flag; /* 53134 BUG avoid */
+ } dev_info_t;
+ 
+ #endif/* _AST_COMMON_H */
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+index 613385e1..9c034b83 100644
+--- a/board/wb-obmc/ast/ast-g5.c
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -70,6 +70,30 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define PRODUCT_EEPROM_LEN        (256)
+ 
+ #define SCU_BASE                  (0x1E6E2000)
++#define SCUA0                     (0xA0)        /* Multi-function Pin Control #7 */
++#define MAC2_BASE                 (0x1E680000)
++#define MACCR_REG                 (0x50)        /* MAC control register */
++#define GMAC_MODE_BIT             (1UL<<9)
++#define RGMII2_PIN_VALUE          (0x00FC0FC0)
++
++/* Put pins in RGMII mode
++ * SCUA0[6:11, 18:23]
++ * TX
++ * RMII2TXCK       GPIOT6:SCUA0[6]  = 0
++ * RMII2TXCTL      GPIOT7:SCUA0[7]  = 0
++ * RMII2TXD0       GPIOU0:SCUA0[8]  = 0
++ * RMII2TXD1       GPIOU1:SCUA0[9]  = 0
++ * RMII2TXD2       GPIOU2:SCUA0[10] = 0
++ * RMII2TXD3       GPIOU3:SCUA0[11] = 0
++ * RX
++ * RMII2RXCK       GPIOV2:SCUA0[18] = 0
++ * RMII2RXCTL      GPIOV3:SCUA0[19] = 0
++ * RMII2RXD0       GPIOV4:SCUA0[20] = 0
++ * RMII2RXD1       GPIOV5:SCUA0[21] = 0
++ * RMII2RXD2       GPIOV6:SCUA0[22] = 0
++ * RMII2RXD3       GPIOV7:SCUA0[23] = 0
++ */
++
+ #define SCU_48                    (0x48)
+ #define DELAY_MASK                (0x3F)
+ #define SCU48_MAC2_TXDELAY_MASK   (6)
+@@ -1256,10 +1280,27 @@ static void set_mac_txrx_delay(void)
+     return;
+ }
+ 
++static int fix_mac_bug(void)
++{
++    if (g_dev_info && (g_dev_info->fix_53134_flag == 1)) {
++        /* XXX:53134 BUG avoid,set the RGMII2 pin to GPIO mode */
++        writel(readl(SCU_BASE + SCUA0) | RGMII2_PIN_VALUE, SCU_BASE + SCUA0);
++        printf("53134 fix GPIO %s(scuA0=0x%x)\n", __func__, readl(SCU_BASE + SCUA0));
++        /* XXX:53134 BUG avoid,set MAC2 GMAC_MODE */
++        writel(readl(MAC2_BASE + MACCR_REG) | GMAC_MODE_BIT, MAC2_BASE + MACCR_REG);
++        printf("53134 fix GMAC MODE %s(mcr=0x%x)\n", __func__, readl(MAC2_BASE + MACCR_REG));
++    }
++
++    return 0;
++}
++
+ int board_late_init(void)
+ {
++    debug("%s()\n", __func__);
+     product_name_match();
+     set_mac_txrx_delay();
++    fix_mac_bug();
++
+     return 0;
+ }
+ #endif
+diff --git a/drivers/net/ftgmac100.c b/drivers/net/ftgmac100.c
+index 999941de..8f85887a 100644
+--- a/drivers/net/ftgmac100.c
++++ b/drivers/net/ftgmac100.c
+@@ -282,13 +282,19 @@ static void ftgmac100_stop(struct udevice *dev)
+ {
+ 	struct ftgmac100_data *priv = dev_get_priv(dev);
+ 	struct ftgmac100 *ftgmac100 = priv->iobase;
++    struct phy_device *phydev = priv->phydev;
+ 
+ 	debug("%s()\n", __func__);
+ 
+-	writel(0, &ftgmac100->maccr);
++    if (phy_interface_is_rgmii(phydev) && phydev->speed == 1000) {
++        writel(FTGMAC100_MACCR_GIGA_MODE, &ftgmac100->maccr);
++        ftgmac100_reset(priv);
++    } else {
++        writel(0, &ftgmac100->maccr);
++    }
+ 
+ 	if (!priv->ncsi_mode)
+-		phy_shutdown(priv->phydev);
++		phy_shutdown(phydev);
+ }
+ 
+ static int ftgmac100_start(struct udevice *dev)
+-- 
+2.25.1
+

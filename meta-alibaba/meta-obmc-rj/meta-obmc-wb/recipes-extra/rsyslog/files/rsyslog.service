@@ -1,0 +1,16 @@
+[Unit]
+Description=System Logging Service
+Requires=syslog.socket
+After=init-early.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/sbin/rsyslogd -n -i/var/run/rsyslogd.pid
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=syslog.service
+

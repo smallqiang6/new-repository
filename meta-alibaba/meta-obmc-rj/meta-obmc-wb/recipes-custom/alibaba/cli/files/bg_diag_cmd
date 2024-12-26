@@ -1,0 +1,341 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+import inspect
+import os
+import sys
+import json
+import time
+import datetime
+from hal.hal_firmware import *
+from hal.hal_misc import *
+from plat_hal.rj_rawcmd import RjRawCmd
+from plat_utils.plat_common_util import *
+
+file_list_14_40d_rj = ["/var/log/upgrade/as14-40d_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-40d_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-40d_cpld_2_2_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-40d_cpld_3_3_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-40d_cpld_4_3_cpu_pwr.vme"]
+name_list_14_40d_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "MAC_BOARD_CPLD_1","MAC_BOARD_CPLD_2"]
+
+file_list_61_48x4t_rj = ["/var/log/upgrade/as61-48x4t_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as61-48x4t_cpld_1_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as61-48x4t_cpld_2_0_cpu_pwr.vme"]
+name_list_61_48x4t_rj = ["CTRL_MODULE_CPLD","PORT_BOARD_CPLD_1","PORT_BOARD_CPLD_2"]
+
+file_list_61_48e4t_rj = ["/var/log/upgrade/as61-48e4t_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as61-48e4t_cpld_1_0_cpu_pwr.vme"]
+name_list_61_48e4t_rj = ["CTRL_MODULE_CPLD","PORT_BOARD_CPLD"]
+
+file_list_51_48c2g_rj = ["/var/log/upgrade/ac51-48c2g_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/ac51-48c2g_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/ac51-48c2g_cpld2_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/ac51-48c2g_cpld_2_1_cpu_pwr.vme"]
+name_list_51_48c2g_rj = ["CPU_MODULE_CPLD","CPU_BOARD_CPLD","CPU_BOARD_CPLD2","PORT_BOARD_CPLD"]
+
+file_list_24_128d_rj = ["/var/log/upgrade/as24-128d_cpld_0_0_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_1_1_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_2_2_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_3_3_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_4_3_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_5_4_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_6_4_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_7_5_cpu_pwr.vme",
+                        "/var/log/upgrade/as24-128d_cpld_8_5_cpu_pwr.vme"]
+name_list_24_128d_rj = [ "CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "MAC_BOARD_CPLD_1",
+                         "MAC_BOARD_CPLD_2", "40CCQ_CPLD_1", "40CCQ_CPLD_2", "44CCQ_CPLD_1", "44CCQ_CPLD_2"]
+
+file_list_14_24d8q_rj = ["/var/log/upgrade/as14-24d8q_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-24d8q_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-24d8q_cpld_2_2_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-24d8q_cpld_3_3_cpu_pwr.vme",
+                         "/var/log/upgrade/as14-24d8q_cpld_4_3_cpu_pwr.vme"]
+name_list_14_24d8q_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "MAC_BOARD_CPLD_1","MAC_BOARD_CPLD_2"]
+
+file_list_25_128q_rj = ["/var/log/upgrade/as25-128q_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_2_2_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as25-128q_cpld_7_7_cpu_pwr.vme"]
+name_list_25_128q_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "LC_BOARD_CPLD", "MAC_BOARD_CPLD_2", "MAC_BOARD_CPLD_1", "MAC_MISC_CPLD"]
+
+file_list_24_128d_2_rj = ["/var/log/upgrade/as24-128d-2_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_2_2_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_all_port_cpu_pwr.vme",
+                         "/var/log/upgrade/as24-128d-2_cpld_7_7_cpu_pwr.vme"]
+name_list_24_128d_2_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "LC_BOARD_CPLD", "MAC_BOARD_CPLD_2", "MAC_BOARD_CPLD_1", "MAC_MISC_CPLD"]
+
+
+file_list_51_24d_rj = ["/var/log/upgrade/as51-24d-a1_cpld_0_0_cpu_pwr.vme",
+                         "/var/log/upgrade/as51-24d-a1_cpld_1_1_cpu_pwr.vme",
+                         "/var/log/upgrade/as51-24d-a1_cpld_2_2_cpu_pwr.vme",
+                         "/var/log/upgrade/as51-24d-a1_cpld_3_3_cpu_pwr.vme",
+                         "/var/log/upgrade/as51-24d-a1_cpld_4_4_cpu_pwr.vme",
+                         "/var/log/upgrade/as51-24d-a1_cpld_5_5_cpu_pwr.vme"]
+name_list_51_24d_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "CPU_BOARD_CPLD-FAN", "SWITCH_MISC_CPLD", "SWITCH_CPLD_A", "SWITCH_CPLD_B"]
+
+file_list_15_40q_rj = ["/var/log/upgrade/as15-40q_cpld_1_1_cpu_pwr_header.vme",
+                         "/var/log/upgrade/as15-40q_cpld_2_2_cpu_pwr_header.vme",
+                         "/var/log/upgrade/as15-40q_cpld_3_3_cpu_pwr_header.vme",
+                         "/var/log/upgrade/as15-40q_cpld_4_4_cpu_pwr_header.vme",
+                         "/var/log/upgrade/as15-40q_cpld_5_5_cpu_pwr_header.vme"]
+name_list_15_40q_rj = ["CPU_MODULE_CPLD", "CPU_BOARD_CPLD", "MAC_BOARD_CPLD_1", "CPU_BOARD_CPLD-FAN", "MAC_MISC_CPLD"]
+
+
+class Basecommand():
+    def __init__(self, doc = '', name = None):
+        self.name  = name
+        self.doc = doc
+
+class Command(Basecommand):
+    def __init__(self, name, f):
+        self.name =name
+        self.f = f
+        self.paramcount =self.f.__code__.co_argcount
+
+    def dofun(self, args):
+        fn = self.f.__call__
+        fn(*args)
+
+class Group(Basecommand):
+    def __init__(self, name, f):
+        self.groups= []
+        self.commands = []
+        self.name =name
+        self.f = f
+        pass
+
+    def add_groups(self, command):
+        self.groups.append(command)
+        pass
+
+    def add_commands(self, commnad):
+        x = Command(commnad.__name__, commnad)
+        self.commands.append(x)
+
+    def find_valuebyname(self, name):
+        for item in self.groups:
+            if name == item.name:
+                return item
+        for item in self.commands:
+            if name == item.name:
+                return item
+        return None
+
+    def deal(self, args):
+        if len(args) <= 0:
+            return self.print_help()
+        funclevel = args[0]
+        val = self.find_valuebyname(funclevel)
+        if val is None:
+            return self.print_help()
+        if isinstance(val, Command):
+            if len(args) < (val.paramcount + 1):
+                return self.print_help()
+            else:
+                inputargs = args[1: (1 + val.paramcount)]
+            return val.dofun(inputargs)
+        if isinstance(val , Group):
+            args = args[1:]
+            return val.deal(args)
+        else:
+            self.print_help()
+
+    def get_max(self, arr):
+        lentmp = 0
+        for ar in arr:
+            lentmp = len(ar) if (len(ar) > lentmp) else lentmp
+        return lentmp
+
+    def print_help(self,*attrs):
+
+        namesize = []
+        for item in self.groups:
+            namesize.append(item.name)
+        for item in self.commands:
+            namesize.append(item.name)
+        maxvalue  = self.get_max(namesize)
+
+        if len(self.groups) > 0:
+            print("Groups:")
+            for item in self.groups:
+                print("   %-*s    %s" % (maxvalue, item.name, item.f.__doc__ or ''))
+        if len(self.commands) > 0:
+            print("Commands:")
+            for item in self.commands:
+                print("   %-*s   %s" % (maxvalue,item.name, item.f.__doc__ or ''))
+
+class clival():
+    @staticmethod
+    def Fire(val = None):
+        group = Group("top",'mainlevel')
+        clival.iterGroup(val, group)
+        # context = {}
+        # caller = inspect.stack()[1]
+        # caller_frame = caller[0]
+        # caller_globals = caller_frame.f_globals
+        # caller_locals = caller_frame.f_locals
+        # context.update(caller_globals)
+        # context.update(caller_locals)
+        args = sys.argv[1:]
+        group.deal(args)
+
+    @staticmethod
+    def iterGroup(val, group):
+        for key, item in val.items():
+            if item is None:  # first level
+                if (inspect.isfunction(key)):
+                    group.add_commands(key)
+            else:
+                group1 = Group(key.__name__, key)
+                clival.iterGroup(item, group1)
+                group.add_groups(group1)
+
+def get_program_cpld_result():
+    program_cpld_restlt = "/tmp/upgrade_cpld_result_detail"
+    try:
+        result_fd = open(program_cpld_restlt, "r")
+        if result_fd == -1:
+            result = "open %s failed" % program_cpld_restlt
+        else:
+            result = result_fd.read()
+            result_fd.close()
+    except Exception as e:
+        result = str(e)
+    return result
+
+def upgrade_bmc_slave():
+    halfw = HalFirmware()
+    platcomutil = PlatCommonUtil()
+    upgrade_ret = halfw.program_bmc("slave", "/var/log/upgrade/bmc_bin")
+    if upgrade_ret != -1:
+        set_slave_version_cmd = "/usr/local/bin/firmware_path_upgrade.sh set-bmc-version"
+        set_log, retsult = platcomutil.run_shell_cmd(set_slave_version_cmd)
+    else:
+        retsult = -1
+    return retsult
+
+def upgrade_cpld():
+    halfw = HalFirmware()
+    halmisc = HalMisc()
+    platcomutil = PlatCommonUtil()
+    name_list = []
+    file_list = []
+    platform_name = halmisc.get_platform_name()
+    if platform_name == "AS14-40D-F-RJ":
+        name_list = name_list_14_40d_rj
+        file_list = file_list_14_40d_rj
+    elif platform_name == "AS24-128D-RJ":
+        name_list = name_list_24_128d_rj
+        file_list = file_list_24_128d_rj
+    elif platform_name == "AS61-48X4T-F-RJ":
+        name_list = name_list_61_48x4t_rj
+        file_list = file_list_61_48x4t_rj
+    elif platform_name == "AS61-48E4T-F-RJ" or \
+        platform_name == "AS61-48E4T-LD-RJ" or \
+        platform_name == "AS61-48E4T-LC-RJ":
+        name_list = name_list_61_48e4t_rj
+        file_list = file_list_61_48e4t_rj
+    elif platform_name == "AC51-48C2G-F-RJ":
+        name_list = name_list_51_48c2g_rj
+        file_list = file_list_51_48c2g_rj
+    elif "AS14-24D8Q" in platform_name:
+        name_list = name_list_14_24d8q_rj
+        file_list = file_list_14_24d8q_rj
+    elif "AS25-128Q" in platform_name:
+        name_list = name_list_25_128q_rj
+        file_list = file_list_25_128q_rj
+    elif "AS15-40Q-RJ" in platform_name:
+        name_list = name_list_15_40q_rj
+        file_list = file_list_15_40q_rj
+    elif platform_name == "AS51-24D-A1-F-RJ":
+        name_list = name_list_51_24d_rj
+        file_list = file_list_51_24d_rj
+    elif platform_name == "AS24-128D-2-RJ":
+        name_list = name_list_24_128d_2_rj
+        file_list = file_list_24_128d_2_rj
+    else:
+        pass
+    if len(file_list) == 0 or len(name_list) == 0:
+        result = -1
+        print("Not support this interface")
+    else:
+        result = halfw.program_cpld(name_list, file_list)
+        print(get_program_cpld_result())
+    return result
+
+def bgdiagcmd():
+    r'''test bgdiagcmd '''
+    pass
+
+def exec_task(taskliststr):
+    r'''remove_one_flash'''
+    cmd = RjRawCmd()
+    halfw = HalFirmware()
+    tasklist = taskliststr.split(",")
+    error_total = 0
+    for taskstr in tasklist:
+        ret = -1
+        output = ""
+        print("%s taskstr" %taskstr)
+        start_time = datetime.datetime.now()
+        if (taskstr == "get_fpga_md5sum"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli get fpga_md5sum")
+            print("%s: %s"%(taskstr, output))
+        elif (taskstr == "get_mac_md5sum"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli get mac_md5sum")
+            print("%s: %s"%(taskstr, output))
+        elif (taskstr == "upd_bmc_master"):
+            ret = halfw.program_bmc("master", "/var/log/upgrade/bmc_bin")
+        elif (taskstr == "upd_bmc_slave"):
+            ret = upgrade_bmc_slave()
+        elif (taskstr == "upd_bios_master"):
+            ret = halfw.program_bios("master", "/var/log/upgrade/bios_bin")
+        elif  (taskstr == "upd_bios_slave"):
+            ret = halfw.program_bios("slave", "/var/log/upgrade/bios_bin")
+        elif (taskstr == "upd_fpga"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_fpga /var/log/upgrade/fpga_bin")
+        elif (taskstr == "upd_5387"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_5387 /var/log/upgrade/5387_bin")  
+        elif (taskstr == "upd_88e6321"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_88e6321 /var/log/upgrade/88e6321_bin")
+        elif (taskstr == "upd_8367"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_8367 /var/log/upgrade/8367_bin")
+        elif (taskstr == "upd_bcm53134"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_bcm53134 /var/log/upgrade/bcm53134_bin")
+        elif (taskstr == "upd_mac"):
+            ret, output = cmd.param_manage("rj_rawcmd_cli upgrade_mac /var/log/upgrade/mac_bin")
+        elif (taskstr == "upd_cpld"):
+            ret = upgrade_cpld()
+        else:
+            pass
+        end_time = datetime.datetime.now()
+        if ret != -1:
+            result = "SUCCESS"
+        else:
+            result = "FAILED"
+            error_total -= 1
+        print("%s: %s, %s to %s\n"%(taskstr, result, start_time, end_time))
+    if error_total >= 0:
+        print("TEST_SUCCESS\n")
+    else:
+        print("TEST_FAILED\n")
+
+if __name__ == '__main__':
+    clival.Fire(
+        {
+            bgdiagcmd:{
+                    exec_task       : None,
+                 },
+            
+        }
+    )

@@ -1,0 +1,4113 @@
+From 6817414af27f914508c87ae372dc1f5ffb5a6b0f Mon Sep 17 00:00:00 2001
+From: wanganman <wanganman@ruijie.com.cn>
+Date: Wed, 13 Nov 2024 15:50:57 +0800
+Subject: [PATCH] 9600-and-cardid BranchName: facebook-meta-whitebox-master
+ CAFID: N202411133458 BUGID: WorkPackageName: BSP The ratio of self research
+ code(0~1): 1
+
+---
+ board/wb-obmc/ast/ast-common.h       |   44 -
+ board/wb-obmc/ast/ast-g5.c           | 1235 +-------------------------
+ board/wb-obmc/ast/ast-g6.c           | 1212 +------------------------
+ configs/wb-ast2600-9600_defconfig    |  102 +++
+ configs/wb-ast2600_defconfig         |    1 +
+ drivers/Makefile                     |    3 +
+ drivers/mtd/spi/spi-nor-core.c       |    6 +-
+ drivers/ssp/Makefile                 |    5 +
+ drivers/ssp/platform_common_module.c | 1139 ++++++++++++++++++++++++
+ include/platform_common_module.h     |  215 +++++
+ 10 files changed, 1477 insertions(+), 2485 deletions(-)
+ delete mode 100644 board/wb-obmc/ast/ast-common.h
+ create mode 100644 configs/wb-ast2600-9600_defconfig
+ create mode 100755 drivers/ssp/Makefile
+ create mode 100755 drivers/ssp/platform_common_module.c
+ create mode 100644 include/platform_common_module.h
+
+diff --git a/board/wb-obmc/ast/ast-common.h b/board/wb-obmc/ast/ast-common.h
+deleted file mode 100644
+index f053d604..00000000
+--- a/board/wb-obmc/ast/ast-common.h
++++ /dev/null
+@@ -1,44 +0,0 @@
+-/*
+- * Copyright 2016 IBM Corporation
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; either version
+- * 2 of the License, or (at your option) any later version.
+- */
+-#ifndef _AST_COMMON_H
+-#define _AST_COMMON_H
+-
+-#define PRODUCT_INFO_LEN     (64)
+-#define MAC_ADDR_LENGTH      (6)
+-#define ETH_NAME_MAX_LEN     (32)
+-
+-#define IS_PCA9641      0
+-#define NOT_PCA9641     1
+-
+-#define E2_TLV          0
+-#define E2_FRU          1
+-
+-typedef struct eeprom_list_s {
+-    int bus;
+-    int addr;
+-    int is_pca9641;
+-    int e2_type;
+-} eeprom_list_t;
+-
+-typedef struct dev_info_s {
+-    int dev_type;                          /* product-id */
+-    int tx_delay;
+-    int rx_delay;
+-    char eth_prime[ETH_NAME_MAX_LEN];
+-    char dev_name[PRODUCT_INFO_LEN];       /* product name */
+-    char conffit_name[PRODUCT_INFO_LEN];   /* dts file name*/
+-    int mac_addr_valid_flag;               /* Valid MAC address indicates a valid MAC address */
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
+-    int fru_mac_extra_index;
+-    int mac_increased;                     /* The BMC MAC address increment of the BASE MAC address. */
+-    char syseeprom_type[PRODUCT_INFO_LEN]; /* syseeprom type such as:onie-tlv, sysfru-a, sysfru-b */
+-    int fix_53134_flag; /* 53134 BUG avoid */
+-} dev_info_t;
+-
+-#endif/* _AST_COMMON_H */
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+index 9c034b83..99d0f4fc 100644
+--- a/board/wb-obmc/ast/ast-g5.c
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -20,1248 +20,22 @@
+ 
+ #include "tpm-spl.h"
+ #include "util.h"
+-#include "ast-product.h"
+ #include <i2c.h>
+ #include <dm.h>
+-
+-int env_save(void);
+-
+-#ifdef ARRAY_SIZE
+-#undef ARRAY_SIZE
+-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+-#endif
+-
+-#ifdef DEBUG
+-#define ast_debug(fmt, args...)	printf(fmt, ##args)
+-#else
+-#define ast_debug(fmt, args...)
+-#endif
++#include <platform_common_module.h>
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ #ifdef CONFIG_BOARD_LATE_INIT
+ 
+-#define ENV_PRODUCT_NAME          "productname"
+-#define ENV_BOARD_ID              "board_id"
+-
+-#define ENV_PRODUCT_FLAG_NAME     "productflag"
+-#define ENV_CONF_FIT_NAME         "conffitname"
+-
+-#define ENV_PRODUCT_DEBUG         "productdebug"
+-
+-#define ENV_PRODUCT_FLAG_VAL      "1"
+-#define ENV_PRODUCT_NO_FLAG_VAL   "0"
+-
+-#define ENV_PRODUCT_DEBUG_VAL     "debug"
+-#define ENV_MAC_ADDR              "ethaddr"
+-#define ENV_MAC0_ADDR             "eth0addr"
+-#define ENV_MAC1_ADDR             "eth1addr"
+-#define ENV_ETH_PRIME             "ethprime"
+-
+-#define ENV_MAC_INCREASED         "mac_increased"
+-#define ENV_SYSEEPROM_TYPE        "syseeprom_type"
+-#define E2TYPE_ONIE_TLV           "onie-tlv"
+-#define E2TYPE_SYSFRU_A           "sysfru-a"
+-#define E2TYPE_SYSFRU_B           "sysfru-b"
+-#define E2TYPE_WEDGE              "wedge"
+-#define E2TYPE_UNKNOWN            "unknown"
+-
+-#define PRODUCT_I2C_ADDR          (0x57)
+-#define PRODUCT_EEPROM_LEN        (256)
+-
+-#define SCU_BASE                  (0x1E6E2000)
+-#define SCUA0                     (0xA0)        /* Multi-function Pin Control #7 */
+-#define MAC2_BASE                 (0x1E680000)
+-#define MACCR_REG                 (0x50)        /* MAC control register */
+-#define GMAC_MODE_BIT             (1UL<<9)
+-#define RGMII2_PIN_VALUE          (0x00FC0FC0)
+-
+-/* Put pins in RGMII mode
+- * SCUA0[6:11, 18:23]
+- * TX
+- * RMII2TXCK       GPIOT6:SCUA0[6]  = 0
+- * RMII2TXCTL      GPIOT7:SCUA0[7]  = 0
+- * RMII2TXD0       GPIOU0:SCUA0[8]  = 0
+- * RMII2TXD1       GPIOU1:SCUA0[9]  = 0
+- * RMII2TXD2       GPIOU2:SCUA0[10] = 0
+- * RMII2TXD3       GPIOU3:SCUA0[11] = 0
+- * RX
+- * RMII2RXCK       GPIOV2:SCUA0[18] = 0
+- * RMII2RXCTL      GPIOV3:SCUA0[19] = 0
+- * RMII2RXD0       GPIOV4:SCUA0[20] = 0
+- * RMII2RXD1       GPIOV5:SCUA0[21] = 0
+- * RMII2RXD2       GPIOV6:SCUA0[22] = 0
+- * RMII2RXD3       GPIOV7:SCUA0[23] = 0
+- */
+-
+-#define SCU_48                    (0x48)
+-#define DELAY_MASK                (0x3F)
+-#define SCU48_MAC2_TXDELAY_MASK   (6)
+-#define SCU48_MAC2_RXDELAY_MASK   (18)
+-
+-/**************************fru eeprom**(***************************/
+-#define IPMI_FRU_HDR_BYTE_ZERO               (1)
+-#define IPMI_FRU_COMMON_HEADER               (8)
+-#define IPMI_FRU_PRODUCT_OFFSET              (4)
+-#define IPMI_FRU_PRODUCT_NAME_INDEX          (2)
+-#define IPMI_FRU_PRODUCT_AREA_MIN_LEN        (7)
+-#define IPMI_FRU_SENTINEL_VALUE              (0xC1)
+-#define IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK  (0xC0)
+-
+-/**************************wedge eeprom*****************************/
+-#define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
+-#define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
+-#define FBW_EEPROM_F_LOCAL_MAC_OFFSET (149)
+-
+-static dev_info_t *g_dev_info = NULL;
+-
+-/**
+- *  The TLV Types.
+- *
+- *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
+- */
+-#define TLV_CODE_PRODUCT_NAME   (0x21)
+-#define TLV_CODE_PART_NUMBER    (0x22)
+-#define TLV_CODE_SERIAL_NUMBER  (0x23)
+-#define TLV_CODE_MAC_BASE       (0x24)
+-#define TLV_CODE_MANUF_DATE     (0x25)
+-#define TLV_CODE_DEVICE_VERSION (0x26)
+-#define TLV_CODE_LABEL_REVISION (0x27)
+-#define TLV_CODE_PLATFORM_NAME  (0x28)
+-#define TLV_CODE_ONIE_VERSION   (0x29)
+-#define TLV_CODE_MAC_SIZE       (0x2A)
+-#define TLV_CODE_MANUF_NAME     (0x2B)
+-#define TLV_CODE_MANUF_COUNTRY  (0x2C)
+-#define TLV_CODE_VENDOR_NAME    (0x2D)
+-#define TLV_CODE_DIAG_VERSION   (0x2E)
+-#define TLV_CODE_SERVICE_TAG    (0x2F)
+-#define TLV_CODE_VENDOR_EXT     (0xFD)
+-#define TLV_CODE_CRC_32         (0xFE)
+-
+-#define TLV_CODE_EXT_NO_CMD     (0)
+-#define TLV_CODE_EXT_CARD_ID    (0x1)
+-
+-
+-// Header Field Constants
+-#define TLV_INFO_ID_STRING      "TlvInfo"
+-#define TLV_INFO_VERSION        0x01
+-#define TLV_TOTAL_LEN_MAX       (XXXXXXXX - sizeof(tlvinfo_header_t))
+-
+-struct __attribute__ ((__packed__)) tlvinfo_header_s {
+-    char    signature[8];   /* 0x00 - 0x07 EEPROM Tag "TlvInfo" */
+-    u_int8_t      version;  /* 0x08        Structure version */
+-    u_int16_t     totallen; /* 0x09 - 0x0A Length of all data which follows */
+-};
+-typedef struct tlvinfo_header_s tlvinfo_header_t;
+-
+-/*
+- * TlvInfo TLV: Layout of a TLV field
+- */
+-struct __attribute__ ((__packed__)) tlvinfo_tlv_s {
+-    u_int8_t  type;
+-    u_int8_t  length;
+-    u_int8_t  value[0];
+-};
+-typedef struct tlvinfo_tlv_s tlvinfo_tlv_t;
+-
+-typedef struct tlv_decode_value_s {
+-    u_int8_t value[PRODUCT_INFO_LEN];
+-    u_int32_t length;
+-} tlv_decode_value_t;
+-
+-#ifndef BIT
+-#define BIT(nr)		(1 << (nr))
+-#endif
+-#define PCA9641_ADDR                   (0x10)
+-#define PCA9641_ID                     (0x00)
+-#define PCA9641_ID_MAGIC               (0x38)
+-#define PCA9641_CONTROL                (0x01)
+-#define PCA9641_STATUS                 (0x02)
+-#define PCA9641_TIME                   (0x03)
+-#define PCA9641_CTL_LOCK_REQ           (BIT(0))
+-#define PCA9641_CTL_LOCK_GRANT         (BIT(1))
+-#define PCA9641_CTL_BUS_CONNECT        (BIT(2))
+-#define PCA9641_CTL_BUS_INIT           (BIT(3))
+-#define PCA9641_CTL_SMBUS_SWRST        (BIT(4))
+-#define PCA9641_CTL_IDLE_TIMER_DIS     (BIT(5))
+-#define PCA9641_CTL_SMBUS_DIS          (BIT(6))
+-#define PCA9641_CTL_PRIORITY           (BIT(7))
+-#define PCA9641_STS_OTHER_LOCK         (BIT(0))
+-#define PCA9641_STS_BUS_INIT_FAIL      (BIT(1))
+-#define PCA9641_STS_BUS_HUNG           (BIT(2))
+-#define PCA9641_STS_MBOX_EMPTY         (BIT(3))
+-#define PCA9641_STS_MBOX_FULL          (BIT(4))
+-#define PCA9641_STS_TEST_INT           (BIT(5))
+-#define PCA9641_STS_SCL_IO             (BIT(6))
+-#define PCA9641_STS_SDA_IO             (BIT(7))
+-
+-#define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
+-                       !((y) & PCA9641_STS_OTHER_LOCK))
+-#define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
+-#define other_lock(x)  ((x) & PCA9641_STS_OTHER_LOCK)
+-
+-#define PCA9641_TRY_TIMES              1000
+-#define PCA9641_DELAY_TIME             2 /* ms */
+-
+-#define PCA9641_DETECT_TRY_TIMES       3
+-#define PCA9641_DETECT_DELAY_TIME      100 /* ms */
+-
+-u8 eeprom[PRODUCT_EEPROM_LEN];
+-
+-typedef struct product_map_s {
+-    char productname[PRODUCT_INFO_LEN];
+-    char fitname[PRODUCT_INFO_LEN];
+-} product_map_t;
+-
+-product_map_t fit_product_list[] = {
+-    {"NONE", "none"},
+-};
+-
+-static u8 calculate_crc(const u8 *data, int len)
+-{
+-    char crc;
+-    int byte;
+-
+-    crc = 0;
+-    for(byte = 0; byte < len; byte++) {
+-        crc += *data++;
+-    }
+-
+-    return (-crc);
+-}
+-
+-static inline int _a2v(const uint8_t *a)
+-{
+-  uint8_t v = *a;
+-
+-  if ('0' <= v && v <= '9') {
+-    return v - '0';
+-  }
+-  if ('a' <= v && v <= 'f') {
+-    return v - 'a' + 10;
+-  }
+-  if ('A' <= v && v <= 'F') {
+-    return v - 'A' + 10;
+-  }
+-  return -1;
+-}
+-
+-static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
+-{
+-    return ((tlv->type != 0x00) && (tlv->type != 0xFF));
+-}
+-
+-static inline int is_valid_tlvinfo_header(tlvinfo_header_t *hdr)
+-{
+-    int max_size = PRODUCT_EEPROM_LEN;
+-    return((strcmp(hdr->signature, TLV_INFO_ID_STRING) == 0) &&
+-	   (hdr->version == TLV_INFO_VERSION) &&
+-	   (be16_to_cpu(hdr->totallen) <= max_size) );
+-}
+-
+-/* Strip out Spaces and carriage returns */
+-static void delete_space_lf_cr(char *str)
+-{
+-    int i, j;
+-    int len;
+-
+-    if (str == NULL) {
+-        ast_debug( "param error, str is NULL\n");
+-        return;
+-    }
+-    /* Remove all Spaces from the configuration line */
+-    len = strlen(str);
+-    for (i = 0; i < len; i++) {
+-        if (str[i] == '\r' || str[i] == '\n' || str[i] == ' ') {
+-            for (j = i; j < len - 1; j++) {
+-                str[j] = str[j + 1];
+-            }
+-            str[j] = '\0';
+-            len--;
+-            i--;
+-        }
+-    }
+-}
+-
+-static uint64_t mac_to_uint64(u_int8_t *mac_addr)
+-{
+-    return ((uint64_t)mac_addr[0] << 40) |
+-           ((uint64_t)mac_addr[1] << 32) |
+-           ((uint64_t)mac_addr[2] << 24) |
+-           ((uint64_t)mac_addr[3] << 16) |
+-           ((uint64_t)mac_addr[4] << 8) |
+-           (uint64_t)mac_addr[5];
+-}
+-
+-static void uint64_to_mac(uint64_t value, u_int8_t *mac_addr)
+-{
+-    mac_addr[0] = (value >> 40) & 0xFF;
+-    mac_addr[1] = (value >> 32) & 0xFF;
+-    mac_addr[2] = (value >> 24) & 0xFF;
+-    mac_addr[3] = (value >> 16) & 0xFF;
+-    mac_addr[4] = (value >> 8)  & 0xFF;
+-    mac_addr[5] = value & 0xFF;
+-}
+-
+-static void calc_bmc_mac(u_int8_t *mac_addr, int mac_increased)
+-{
+-    u64 base_mac_value, bmc_mac_value;
+-
+-    base_mac_value = mac_to_uint64(mac_addr);
+-    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
+-        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+-    ast_debug("mac_increased: %d, base_mac_value: 0x%llx\n", mac_increased, base_mac_value);
+-
+-    bmc_mac_value = base_mac_value + mac_increased;
+-    uint64_to_mac(bmc_mac_value, mac_addr);
+-    ast_debug("bmc_mac_value: 0x%llx\n", bmc_mac_value);
+-    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
+-        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+-    return;
+-}
+-
+-static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
+-{
+-    char *value;
+-    u_int32_t length;
+-
+-    length = 0;
+-    value = (char *)decode_value->value;
+-
+-    switch (tlv->type) {
+-    case TLV_CODE_PRODUCT_NAME:
+-    case TLV_CODE_MAC_BASE:
+-        if (tlv->length >= PRODUCT_INFO_LEN) {
+-            length = PRODUCT_INFO_LEN - 1;
+-        } else {
+-            length = tlv->length;
+-        }
+-        memcpy(value, tlv->value, length);
+-        value[length] = 0;
+-        break;
+-    default:
+-        printf("Error tlv type: %d.\n", tlv->type);
+-        return -1;
+-    }
+-
+-    decode_value->length = length;
+-    return 0;
+-}
+-
+-static void ext_cmd_decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
+-{
+-    char *value;
+-    u_int32_t length;
+-
+-    length = 0;
+-    value = (char *)decode_value->value;
+-
+-    switch (tlv->type) {
+-    case TLV_CODE_EXT_CARD_ID:
+-        if (tlv->length >= PRODUCT_INFO_LEN) {
+-            length = PRODUCT_INFO_LEN - 1;
+-        } else {
+-            length = tlv->length;
+-        }
+-        memcpy(value, tlv->value, length);
+-        value[length] = 0;
+-    	break;
+-    default:
+-        printf("Error tlv type: %d.\n", tlv->type);
+-        break;
+-    }
+-
+-    decode_value->length = length;
+-}
+-
+-static int is_checksum_valid(u_int8_t *eeprom)
+-{
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlvinfo_tlv_t *eeprom_crc;
+-    unsigned int calc_crc;
+-    unsigned int stored_crc;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    // Is the eeprom header valid?
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-	    return -1;
+-    }
+-
+-    // Is the last TLV a CRC?
+-    eeprom_crc = (tlvinfo_tlv_t *) &eeprom[sizeof(tlvinfo_header_t) +
+-        be16_to_cpu(eeprom_hdr->totallen) - (sizeof(tlvinfo_tlv_t) + 4)];
+-    if ((eeprom_crc->type != TLV_CODE_CRC_32) || (eeprom_crc->length != 4)) {
+-	    return -1;
+-    }
+-
+-    // Calculate the checksum
+-    calc_crc = crc32(0xffffffffL, (const unsigned char *)eeprom, sizeof(tlvinfo_header_t) +
+-		     be16_to_cpu(eeprom_hdr->totallen) - 4);
+-    stored_crc = ((eeprom_crc->value[0] << 24) | (eeprom_crc->value[1] << 16) |
+-		  (eeprom_crc->value[2] <<  8) | eeprom_crc->value[3]);
+-    if (calc_crc != stored_crc) {
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static int tlvinfo_find_tlv(u_int8_t *eeprom, u_int8_t tcode, int *eeprom_index)
+-{
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlvinfo_tlv_t    *eeprom_tlv;
+-    int eeprom_end;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    // Search through the TLVs, looking for the first one which matches the
+-    // supplied type code.
+-    *eeprom_index = sizeof(tlvinfo_header_t);
+-    eeprom_end = sizeof(tlvinfo_header_t) + be16_to_cpu(eeprom_hdr->totallen);
+-    while (*eeprom_index < eeprom_end) {
+-	    eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[*eeprom_index];
+-	    if (!is_valid_tlv(eeprom_tlv)) {
+-            return -1;
+-	    }
+-
+-        if (eeprom_tlv->type == tcode) {
+-	        return 0;
+-	    }
+-
+-	    *eeprom_index += sizeof(tlvinfo_tlv_t) + eeprom_tlv->length;
+-    }
+-
+-    return -1;
+-}
+-
+-static int tlvinfo_find_tlv_ext(tlvinfo_tlv_t *ext_eeprom, u_int8_t extcode, int *ext_eeprom_index)
+-{
+-    tlvinfo_tlv_t    *ext_eeprom_tlv;
+-
+-    // Search through the TLVs, looking for the first one which matches the
+-    // supplied type code.
+-    while (*ext_eeprom_index < ext_eeprom->length) {
+-	    ext_eeprom_tlv = (tlvinfo_tlv_t *) &(ext_eeprom->value)[*ext_eeprom_index];
+-	    if (!is_valid_tlv(ext_eeprom_tlv)) {
+-            return -1;
+-	    }
+-
+-        if (ext_eeprom_tlv->type == extcode) {
+-	        return 0;
+-	    }
+-
+-	    *ext_eeprom_index += sizeof(tlvinfo_tlv_t) + ext_eeprom_tlv->length;
+-    }
+-
+-    return -1;
+-}
+-
+-static int tlvinfo_decode_tlv(u_int8_t *eeprom, u_int8_t tcode, u_int8_t extcode, tlv_decode_value_t *decode_value)
+-{
+-    int eeprom_index = 0;
+-    int ext_eeprom_index = 0;
+-    tlvinfo_tlv_t *eeprom_tlv;
+-    tlvinfo_tlv_t *ext_eeprom_tlv;
+-
+-    if (tcode == TLV_CODE_VENDOR_EXT) {
+-        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
+-            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
+-            if (tlvinfo_find_tlv_ext(eeprom_tlv, extcode, &ext_eeprom_index) == 0) {
+-                ext_eeprom_tlv = (tlvinfo_tlv_t *) &((eeprom_tlv->value)[ext_eeprom_index]);
+-                ext_cmd_decode_tlv_value(ext_eeprom_tlv, decode_value);
+-                return 0;
+-            }
+-            return 0;
+-        }
+-    } else {
+-        // Find the TLV and then decode it
+-        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
+-            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
+-            return decode_tlv_value(eeprom_tlv, decode_value);
+-        }
+-    }
+-
+-    return -1;
+-}
+-
+-static int get_product_name_from_wedge_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
+-{
+-    const uint8_t *cur = &eeprom[FBW_EEPROM_F_PRODUCT_NAME_OFFSET];
+-
+-    if (p_size < FBW_EEPROM_F_PRODUCT_NAME_LEN) {
+-        ast_debug("p_size: %d, is less than wedge eeprom product name length: %d\n",
+-            p_size, FBW_EEPROM_F_PRODUCT_NAME_LEN);
+-        return -1;
+-    }
+-
+-    memcpy(product, cur, FBW_EEPROM_F_PRODUCT_NAME_LEN);
+-    delete_space_lf_cr(product);
+-    return 0;
+-}
+-#if 0
+-static int get_product_name_from_tlv_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_PRODUCT_NAME, TLV_CODE_EXT_NO_CMD, &decode_value);
+-    if (ret != 0) {
+-        printf("No found Product Name\n");
+-        return -1;
+-    }
+-
+-    if (p_size >= decode_value.length) {
+-        memcpy(product, decode_value.value, decode_value.length);
+-    } else {
+-        memcpy(product, decode_value.value, p_size);
+-    }
+-
+-    return 0;
+-}
+-#endif
+-
+-static int get_product_id_from_tlv_eeprom(u_int8_t *eeprom, unsigned long *product_id)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-    int i;
+-    unsigned long tmp_product_id = 0;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_VENDOR_EXT, TLV_CODE_EXT_CARD_ID, &decode_value);
+-    if (ret != 0) {
+-        printf("No found Product ID\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < decode_value.length; i++) {
+-        tmp_product_id = tmp_product_id << 8;
+-        tmp_product_id |= decode_value.value[i];
+-    }
+-
+-    *product_id = tmp_product_id;
+-    ast_debug("tlv_product_id = 0x%lx \n", *product_id);
+-
+-    return 0;
+-}
+-
+-static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_MAC_BASE, TLV_CODE_EXT_NO_CMD, &decode_value);
+-    if (ret != 0) {
+-        ast_debug("No found MAC address\n");
+-        return -1;
+-    }
+-
+-    if (decode_value.length != size) {
+-        printf("Invalid mac addr size: %d.\n", decode_value.length);
+-        return -1;
+-    }
+-
+-    memcpy(buf, decode_value.value, size);
+-    return 0;
+-}
+-
+-static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+-{
+-    int i, a2v_tmp1, a2v_tmp2;
+-    const uint8_t *cur = &eeprom[FBW_EEPROM_F_LOCAL_MAC_OFFSET];
+-
+-    if (size < MAC_ADDR_LENGTH) {
+-        ast_debug("mac size buf %d is less than 6\n", size)
+-        return -1;
+-    }
+-
+-    for (i = 0; i < MAC_ADDR_LENGTH; i++) {
+-        a2v_tmp1 = _a2v(cur);
+-        a2v_tmp2 = _a2v(cur + 1);
+-        if ((a2v_tmp1 < 0) || (a2v_tmp2 < 0)) {
+-            printf("Invalid mac address ASCII, index: %d, value: 0x%02x, 0x%02x\n", i * 2, cur[0], cur[1]);
+-            return -1;
+-        }
+-        *buf = ((a2v_tmp1 << 4) | a2v_tmp2) & 0xff;
+-        buf++;
+-        cur += 2;
+-    }
+-    return 0;
+-}
+-
+-static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
+-{
+-    int offset;
+-    int i;
+-    u32 len;
+-
+-    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
+-    /* skip Product Area Format Version, Product Area Length and Language Code */
+-    offset += 3;
+-    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
+-        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
+-            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-                fru_mac_extra_index);
+-            return -1;
+-        }
+-
+-        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+-        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
+-            if (len != MAC_ADDR_LENGTH) {
+-                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
+-                    len, fru_mac_extra_index);
+-                return -1;
+-            }
+-            memcpy(buf, &(eeprom[offset + 1]), size);
+-            return 0;
+-        }
+-        offset += 1;
+-        offset += len;
+-    }
+-
+-    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-        fru_mac_extra_index);
+-    return -1;
+-}
+-
+-static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int ret;
+-    int i;
+-    unsigned long product_id;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    int mac_addr_valid_flag;
+-
+-    /* get dev_info by product id */
+-    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
+-    if (ret < 0) {
+-        return -1;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (product_id == g_dev_info_list[i].dev_type) {
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product id: 0x%lx not found in dev_info_list.\n", product_id);
+-        return -1;
+-    }
+-
+-    /* onie-tlv eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_ONIE_TLV);
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int i, ret;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    char product[PRODUCT_INFO_LEN];
+-    int mac_addr_valid_flag;
+-
+-    /* get dev_info by product name */
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product name: %s not found in dev_info_list.\n", product);
+-        return -1;
+-    }
+-    /* wedge eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_WEDGE);
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int i, ret, offset;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    char product[PRODUCT_INFO_LEN];
+-    int mac_addr_valid_flag;
+-    u8 crc;
+-    u32 len;
+-
+-    crc = calculate_crc(eeprom, IPMI_FRU_COMMON_HEADER - 1);
+-    if (crc != eeprom[IPMI_FRU_COMMON_HEADER - 1]) {
+-        printf("Invalid fru header crc: 0x%02x(must 0x%02x).\n", eeprom[IPMI_FRU_COMMON_HEADER - 1], crc);
+-        return -1;
+-    }
+-
+-    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
+-    if (offset > PRODUCT_EEPROM_LEN) {
+-        printf("Error product area offset: %d.\n", offset);
+-        return -1;
+-    }
+-
+-    memset(product, 0, sizeof(product));
+-    /* skip Product Area Format Version, Product Area Length and Language Code */
+-    offset += 3;
+-    for (i = 0; i < IPMI_FRU_PRODUCT_NAME_INDEX; i++) {
+-        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+-        if ((i+1) == IPMI_FRU_PRODUCT_NAME_INDEX) {
+-            if (len >= PRODUCT_INFO_LEN) {
+-                printf("Error: prodcut name length: %d\n", len);
+-                len = PRODUCT_INFO_LEN - 1;
+-            }
+-            memcpy(product, &(eeprom[offset + 1]), len);
+-            break;
+-        }
+-        offset += 1;
+-        offset += len;
+-    }
+-
+-    if (i == IPMI_FRU_PRODUCT_NAME_INDEX) {
+-        printf("No found product name from fru eeprom.\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product name: %s not found in dev_info_list.\n", product);
+-        return -1;
+-    }
+-
+-    /* fru eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    if ((*dev_info)->fru_mac_extra_index == 1) {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_B);
+-    } else if ((*dev_info)->fru_mac_extra_index == 2) {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_A);
+-    } else {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "sysfru-%d", (*dev_info)->fru_mac_extra_index);
+-    }
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int pca9641_set_bus(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl, reg_sts;
+-
+-    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    ret = dm_i2c_read(dev, PCA9641_STATUS, &reg_sts, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    reg_ctl |= PCA9641_CTL_PRIORITY; /* set pca9641 priority */
+-    if (BUSOFF(reg_ctl, reg_sts)) {
+-        reg_ctl |= PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-
+-        ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to read pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-
+-        if (lock_grant(reg_ctl)) {
+-            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
+-            ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-            if (ret < 0) {
+-                ast_debug("Failed to write pca9641: 0x%02x.(busoff, lock_grant)\n", PCA9641_CONTROL);
+-                return -1;
+-            }
+-        } else {
+-            return -1;
+-        }
+-    } else if (lock_grant(reg_ctl)) {
+-        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(lock_grant)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-    } else if (other_lock(reg_sts)) {
+-        reg_ctl |= PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(other_lock)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static int pca9641_detect(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl;
+-
+-    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static void pca9641_release_bus(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl;
+-
+-    reg_ctl = 0;
+-    ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to release pca9641: 0x%02x.\n", PCA9641_CONTROL);
+-    }
+-
+-}
+-#if 0
+-static int get_product_name_match(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int ret;
+-    int i;
+-    char product[PRODUCT_INFO_LEN];
+-
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_tlv_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
+-    }
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
+-        if ( strcmp(product, g_dev_info_list[i].dev_name ) == 0 ) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            return 0;
+-        }
+-    }
+-
+-    return -1;
+-}
+-#endif
+-static int pca9641_get_eeprom(struct udevice *pca9641_dev, struct udevice *e2_dev, int addr)
+-{
+-    int ret;
+-    int i;
+-
+-    /* detect pca9641, if fail, return */
+-    for (i = 0; i < PCA9641_DETECT_TRY_TIMES; i++) {
+-        ret = pca9641_detect(pca9641_dev);
+-        if (ret == 0) {
+-            break;
+-        }
+-        udelay(PCA9641_DETECT_DELAY_TIME * 1000);
+-    }
+-
+-    if (i == PCA9641_DETECT_TRY_TIMES) {
+-        ast_debug("Failed to detect pca9641.\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < PCA9641_TRY_TIMES; i++) {
+-        ret = pca9641_set_bus(pca9641_dev);
+-        if (ret == 0) {
+-            break;
+-        }
+-        udelay(PCA9641_DELAY_TIME * 1000);
+-    }
+-
+-    if (i == PCA9641_TRY_TIMES) {
+-        ast_debug("Failed to set pca9641 bus.\n");
+-        pca9641_release_bus(pca9641_dev);
+-        return -1;
+-    }
+-
+-    ret = dm_i2c_read(e2_dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
+-        pca9641_release_bus(pca9641_dev);
+-        return -1;
+-    }
+-
+-    pca9641_release_bus(pca9641_dev);
+-
+-    return 0;
+-}
+-
+-static int normal_get_eeprom(struct udevice *dev, int addr)
+-{
+-    int ret;
+-
+-    ret = dm_i2c_read(dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
+-        return -1;
+-    }
+-    return 0;
+-}
+-
+-static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_info)
+-{
+-    struct udevice *bus, *e2_dev, *pca9641_dev;
+-    int ret = -1;
+-
+-    ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
+-
+-    ret = uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
+-    if (ret) {
+-        printf("get i2c-%d adapter fail, ret : %d!! \n", tmp_eeprom_list->bus, ret);
+-        return ret;
+-    }
+-    ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
+-    if (ret) {
+-        ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
+-            tmp_eeprom_list->bus, tmp_eeprom_list->addr, ret);
+-        return -1;
+-    }
+-    ast_debug("get eeprom chip success\n");
+-
+-    if (tmp_eeprom_list->is_pca9641 == IS_PCA9641) {
+-        ret = i2c_get_chip(bus, PCA9641_ADDR, 1, &pca9641_dev);
+-        if (ret) {
+-            ast_debug("get pca9641 chip failed, bus: %d, addr: 0x%x, ret: %d\n",
+-                tmp_eeprom_list->bus, PCA9641_ADDR, ret);
+-            return -1;
+-        }
+-        ast_debug("get pca9641 chip success\n");
+-        ret = pca9641_get_eeprom(pca9641_dev, e2_dev, tmp_eeprom_list->addr);
+-    } else {
+-        ret = normal_get_eeprom(e2_dev, tmp_eeprom_list->addr);
+-    }
+-
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom.\n");
+-        return ret;
+-    }
+-
+-    /* wedge eeprom magic */
+-    if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
+-        ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
+-    } else if (eeprom[0] == IPMI_FRU_HDR_BYTE_ZERO) {
+-        ret = get_dev_info_from_fru_eeprom(eeprom, dev_info);
+-    } else {
+-        ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
+-    }
+-
+-    return ret;
+-}
+-
+-static int save_mac_addr(dev_info_t *dev_info, char *env_mac_name)
+-{
+-    char mac_addr_str[PRODUCT_INFO_LEN];
+-    char *p_mac_addr;
+-
+-    memset(mac_addr_str, 0, sizeof(mac_addr_str));
+-    if (dev_info->mac_addr_valid_flag) {
+-        snprintf(mac_addr_str, sizeof(mac_addr_str), "%pM", dev_info->mac_addr);
+-        p_mac_addr = env_get(env_mac_name);
+-        if ((p_mac_addr == NULL) || (strcmp(p_mac_addr, mac_addr_str) != 0)) {
+-            env_set(env_mac_name, mac_addr_str);
+-            ast_debug("Set %s to flash env...\n", env_mac_name);
+-            return 1;
+-        }
+-    }
+-    return 0;
+-}
+-
+-static void save_product_name(dev_info_t *dev_info)
+-{
+-    u32 len;
+-    char fit[PRODUCT_INFO_LEN];
+-    char board_id_str[PRODUCT_INFO_LEN];
+-    char mac_increased_str[PRODUCT_INFO_LEN];
+-    char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
+-    char *p_mac_increased, *p_syseeprom_type;
+-    int is_save_flag;
+-    int i;
+-    char *debug_product;
+-
+-    /* ......productname . conffitname */
+-    debug_product = env_get(ENV_PRODUCT_DEBUG);
+-    if (debug_product != NULL && (strcmp(debug_product, ENV_PRODUCT_DEBUG_VAL) == 0)) {
+-        printf("Debug mode...\n");
+-        return;
+-    }
+-
+-    if (dev_info == NULL) {
+-        printf("dev_info is NULL, can't get product info.\n");
+-        return;
+-    }
+-
+-    is_save_flag = 0;
+-    /* productname.. */
+-    env_product = env_get(ENV_PRODUCT_NAME);
+-    if (env_product == NULL || strcmp(dev_info->dev_name, env_product) != 0) {
+-        env_set(ENV_PRODUCT_NAME, dev_info->dev_name);
+-        env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_FLAG_VAL);
+-        is_save_flag = 1;
+-    } else {
+-        save_flag = env_get(ENV_PRODUCT_FLAG_NAME);
+-        if (strcmp(save_flag, ENV_PRODUCT_FLAG_VAL) == 0) {
+-            env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_NO_FLAG_VAL);
+-            is_save_flag = 1;
+-        }
+-    }
+-
+-    /* conffitname.. */
+-    def_fit_name = dev_info->conffit_name;
+-    memset(fit, 0, PRODUCT_INFO_LEN);
+-    len = (strlen(def_fit_name) >= PRODUCT_INFO_LEN) ? (PRODUCT_INFO_LEN - 1) : strlen(def_fit_name);
+-    for (i = 0; i < len; i++) {
+-        if (def_fit_name[i] >= 'A' && def_fit_name[i] <= 'Z') {
+-            fit[i] = def_fit_name[i] + 32;
+-        } else {
+-            fit[i] = def_fit_name[i];
+-        }
+-    }
+-    fit_name = env_get(ENV_CONF_FIT_NAME);
+-    if (fit_name == NULL || strcmp(fit, fit_name) != 0) {
+-        env_set(ENV_CONF_FIT_NAME, fit);
+-        is_save_flag = 1;
+-    }
+-
+-    /* board_id */
+-    memset(board_id_str, 0, sizeof(board_id_str));
+-    snprintf(board_id_str, sizeof(board_id_str), "0x%x", dev_info->dev_type);
+-    p_board_id = env_get(ENV_BOARD_ID);
+-    if (p_board_id == NULL || strcmp(p_board_id, board_id_str) != 0) {
+-        env_set(ENV_BOARD_ID, board_id_str);
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac addr */
+-    if (save_mac_addr(dev_info, ENV_MAC_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac0 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC0_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-    /* mac1 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC1_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-
+-    /* eth prime */
+-    env_eth_prime = env_get(ENV_ETH_PRIME);
+-    if (env_eth_prime == NULL || strcmp(dev_info->eth_prime, env_eth_prime) != 0) {
+-        env_set(ENV_ETH_PRIME, dev_info->eth_prime);
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac_increased */
+-    memset(mac_increased_str, 0, sizeof(mac_increased_str));
+-    snprintf(mac_increased_str, sizeof(mac_increased_str), "%d", dev_info->mac_increased);
+-    p_mac_increased = env_get(ENV_MAC_INCREASED);
+-    if (p_mac_increased == NULL || strcmp(p_mac_increased, mac_increased_str) != 0) {
+-        env_set(ENV_MAC_INCREASED, mac_increased_str);
+-        is_save_flag = 1;
+-    }
+-
+-    /* syseeprom_type */
+-    p_syseeprom_type = env_get(ENV_SYSEEPROM_TYPE);
+-    if (p_syseeprom_type == NULL) {
+-        if (strlen(dev_info->syseeprom_type) == 0) {
+-            env_set(ENV_SYSEEPROM_TYPE, E2TYPE_UNKNOWN);
+-        } else {
+-            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
+-        }
+-        is_save_flag = 1;
+-    } else {
+-        if ((strlen(dev_info->syseeprom_type) != 0) && (strcmp(dev_info->syseeprom_type, p_syseeprom_type) != 0)) {
+-            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
+-            is_save_flag = 1;
+-        }
+-    }
+-
+-    if (is_save_flag) {
+-        ast_debug("save_env\n");
+-        env_save();
+-    }
+-}
+-
+-static void product_name_match(void)
+-{
+-    int i;
+-    int ret = -1;
+-    char *env_board_id;
+-    dev_info_t *dev_info;
+-    unsigned long board_id;
+-
+-    dev_info = NULL;
+-    for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
+-        ret = get_product_name(&g_eeprom_list[i], &dev_info);
+-        if (ret >= 0) {
+-            ast_debug("match ok, board_id: 0x%x, productname: %s, conffitname: %s\n",
+-                dev_info->dev_type, dev_info->dev_name, dev_info->conffit_name);
+-            break;
+-        }
+-    }
+-
+-    if (ret < 0) {
+-        env_board_id = env_get(ENV_BOARD_ID);
+-        if (env_board_id == NULL) {
+-            printf("Failed to get product from eeprom\nSet default product: %s\n", g_dev_info_list[0].dev_name);
+-            /* read board id failed, default load g_dev_info_list[0] */
+-            dev_info = &g_dev_info_list[0];
+-        } else { /* ENV have board ID */
+-            /* board ID match dev_info */
+-            board_id = simple_strtoul(env_board_id, NULL, 16);
+-            printf("Get board id from env, board_id: 0x%lx\n", board_id);
+-            for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
+-                if (g_dev_info_list[i].dev_type == board_id) {
+-                    /* board id match */
+-                    dev_info = &g_dev_info_list[i];
+-                    break;
+-                }
+-            }
+-        }
+-    }
+-
+-    save_product_name(dev_info);
+-    g_dev_info = dev_info;
+-    return;
+-}
+ 
+ static void set_mac_txrx_delay(void)
+ {
+     u32 value;
+     int txdelay, rxdelay;
++    dev_info_t *g_dev_info;
+ 
++    g_dev_info = get_dev_info();
+     if (g_dev_info == NULL) {
+         return;
+     }
+@@ -1282,6 +56,9 @@ static void set_mac_txrx_delay(void)
+ 
+ static int fix_mac_bug(void)
+ {
++    dev_info_t *g_dev_info;
++
++    g_dev_info = get_dev_info();
+     if (g_dev_info && (g_dev_info->fix_53134_flag == 1)) {
+         /* XXX:53134 BUG avoid,set the RGMII2 pin to GPIO mode */
+         writel(readl(SCU_BASE + SCUA0) | RGMII2_PIN_VALUE, SCU_BASE + SCUA0);
+diff --git a/board/wb-obmc/ast/ast-g6.c b/board/wb-obmc/ast/ast-g6.c
+index 97ad712b..193b6850 100644
+--- a/board/wb-obmc/ast/ast-g6.c
++++ b/board/wb-obmc/ast/ast-g6.c
+@@ -8,52 +8,8 @@
+ #include <i2c.h>
+ #include <dm/uclass.h>
+ #include <fdt_support.h>
+-#include "ast-product.h"
++#include <platform_common_module.h>
+ 
+-int env_save(void);
+-
+-#ifdef ARRAY_SIZE
+-#undef ARRAY_SIZE
+-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+-#endif
+-
+-#ifdef DEBUG
+-#define ast_debug(fmt, args...)	printf(fmt, ##args)
+-#else
+-#define ast_debug(fmt, args...)
+-#endif
+-
+-#define ENV_PRODUCT_NAME          "productname"
+-#define ENV_BOARD_ID              "board_id"
+-
+-#define ENV_PRODUCT_FLAG_NAME     "productflag"
+-#define ENV_CONF_FIT_NAME         "conffitname"
+-
+-#define ENV_PRODUCT_DEBUG         "productdebug"
+-
+-#define ENV_PRODUCT_FLAG_VAL      "1"
+-#define ENV_PRODUCT_NO_FLAG_VAL   "0"
+-
+-#define ENV_PRODUCT_DEBUG_VAL     "debug"
+-#define ENV_MAC_ADDR              "ethaddr"
+-#define ENV_MAC0_ADDR             "eth0addr"
+-#define ENV_MAC1_ADDR             "eth1addr"
+-#define ENV_MAC2_ADDR             "eth2addr"
+-#define ENV_MAC3_ADDR             "eth3addr"
+-#define ENV_ETH_PRIME             "ethprime"
+-
+-#define ENV_MAC_INCREASED         "mac_increased"
+-#define ENV_SYSEEPROM_TYPE        "syseeprom_type"
+-#define E2TYPE_ONIE_TLV           "onie-tlv"
+-#define E2TYPE_SYSFRU_A           "sysfru-a"
+-#define E2TYPE_SYSFRU_B           "sysfru-b"
+-#define E2TYPE_WEDGE              "wedge"
+-#define E2TYPE_UNKNOWN            "unknown"
+-
+-#define PRODUCT_I2C_ADDR          (0x57)
+-#define PRODUCT_EEPROM_LEN        (256)
+-
+-#define SCU_BASE	0x1e6e2000
+ #define ESPI_BASE	0x1e6ee000
+ #define LPC_BASE	0x1e789000
+ #define   LPC_HICR5		(LPC_BASE + 0x80)
+@@ -167,1172 +123,6 @@ static void __maybe_unused espi_init(void)
+ 	writel(reg, ESPI_BASE + 0x000);
+ }
+ 
+-/**************************fru eeprom**(***************************/
+-#define IPMI_FRU_HDR_BYTE_ZERO               (1)
+-#define IPMI_FRU_COMMON_HEADER               (8)
+-#define IPMI_FRU_PRODUCT_OFFSET              (4)
+-#define IPMI_FRU_PRODUCT_NAME_INDEX          (2)
+-#define IPMI_FRU_PRODUCT_AREA_MIN_LEN        (7)
+-#define IPMI_FRU_SENTINEL_VALUE              (0xC1)
+-#define IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK  (0xC0)
+-
+-/**************************wedge eeprom*****************************/
+-#define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
+-#define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
+-#define FBW_EEPROM_F_LOCAL_MAC_OFFSET (149)
+-
+-static dev_info_t *g_dev_info = NULL;
+-
+-/**
+- *  The TLV Types.
+- *
+- *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
+- */
+-#define TLV_CODE_PRODUCT_NAME   (0x21)
+-#define TLV_CODE_PART_NUMBER    (0x22)
+-#define TLV_CODE_SERIAL_NUMBER  (0x23)
+-#define TLV_CODE_MAC_BASE       (0x24)
+-#define TLV_CODE_MANUF_DATE     (0x25)
+-#define TLV_CODE_DEVICE_VERSION (0x26)
+-#define TLV_CODE_LABEL_REVISION (0x27)
+-#define TLV_CODE_PLATFORM_NAME  (0x28)
+-#define TLV_CODE_ONIE_VERSION   (0x29)
+-#define TLV_CODE_MAC_SIZE       (0x2A)
+-#define TLV_CODE_MANUF_NAME     (0x2B)
+-#define TLV_CODE_MANUF_COUNTRY  (0x2C)
+-#define TLV_CODE_VENDOR_NAME    (0x2D)
+-#define TLV_CODE_DIAG_VERSION   (0x2E)
+-#define TLV_CODE_SERVICE_TAG    (0x2F)
+-#define TLV_CODE_VENDOR_EXT     (0xFD)
+-#define TLV_CODE_CRC_32         (0xFE)
+-
+-#define TLV_CODE_EXT_NO_CMD     (0)
+-#define TLV_CODE_EXT_CARD_ID    (0x1)
+-
+-
+-// Header Field Constants
+-#define TLV_INFO_ID_STRING      "TlvInfo"
+-#define TLV_INFO_VERSION        0x01
+-#define TLV_TOTAL_LEN_MAX       (XXXXXXXX - sizeof(tlvinfo_header_t))
+-
+-struct __attribute__ ((__packed__)) tlvinfo_header_s {
+-    char    signature[8];   /* 0x00 - 0x07 EEPROM Tag "TlvInfo" */
+-    u_int8_t      version;  /* 0x08        Structure version */
+-    u_int16_t     totallen; /* 0x09 - 0x0A Length of all data which follows */
+-};
+-typedef struct tlvinfo_header_s tlvinfo_header_t;
+-
+-/*
+- * TlvInfo TLV: Layout of a TLV field
+- */
+-struct __attribute__ ((__packed__)) tlvinfo_tlv_s {
+-    u_int8_t  type;
+-    u_int8_t  length;
+-    u_int8_t  value[0];
+-};
+-typedef struct tlvinfo_tlv_s tlvinfo_tlv_t;
+-
+-typedef struct tlv_decode_value_s {
+-    u_int8_t value[PRODUCT_INFO_LEN];
+-    u_int32_t length;
+-} tlv_decode_value_t;
+-
+-#ifndef BIT
+-#define BIT(nr)		(1 << (nr))
+-#endif
+-#define PCA9641_ADDR                   (0x10)
+-#define PCA9641_ID                     (0x00)
+-#define PCA9641_ID_MAGIC               (0x38)
+-#define PCA9641_CONTROL                (0x01)
+-#define PCA9641_STATUS                 (0x02)
+-#define PCA9641_TIME                   (0x03)
+-#define PCA9641_CTL_LOCK_REQ           (BIT(0))
+-#define PCA9641_CTL_LOCK_GRANT         (BIT(1))
+-#define PCA9641_CTL_BUS_CONNECT        (BIT(2))
+-#define PCA9641_CTL_BUS_INIT           (BIT(3))
+-#define PCA9641_CTL_SMBUS_SWRST        (BIT(4))
+-#define PCA9641_CTL_IDLE_TIMER_DIS     (BIT(5))
+-#define PCA9641_CTL_SMBUS_DIS          (BIT(6))
+-#define PCA9641_CTL_PRIORITY           (BIT(7))
+-#define PCA9641_STS_OTHER_LOCK         (BIT(0))
+-#define PCA9641_STS_BUS_INIT_FAIL      (BIT(1))
+-#define PCA9641_STS_BUS_HUNG           (BIT(2))
+-#define PCA9641_STS_MBOX_EMPTY         (BIT(3))
+-#define PCA9641_STS_MBOX_FULL          (BIT(4))
+-#define PCA9641_STS_TEST_INT           (BIT(5))
+-#define PCA9641_STS_SCL_IO             (BIT(6))
+-#define PCA9641_STS_SDA_IO             (BIT(7))
+-
+-#define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
+-                       !((y) & PCA9641_STS_OTHER_LOCK))
+-#define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
+-#define other_lock(x)  ((x) & PCA9641_STS_OTHER_LOCK)
+-
+-#define PCA9641_TRY_TIMES              1000
+-#define PCA9641_DELAY_TIME             2 /* ms */
+-
+-#define PCA9641_DETECT_TRY_TIMES       3
+-#define PCA9641_DETECT_DELAY_TIME      100 /* ms */
+-
+-u8 eeprom[PRODUCT_EEPROM_LEN];
+-
+-typedef struct product_map_s {
+-    char productname[PRODUCT_INFO_LEN];
+-    char fitname[PRODUCT_INFO_LEN];
+-} product_map_t;
+-
+-product_map_t fit_product_list[] = {
+-    {"NONE", "none"},
+-};
+-
+-static u8 calculate_crc(const u8 *data, int len)
+-{
+-    char crc;
+-    int byte;
+-
+-    crc = 0;
+-    for(byte = 0; byte < len; byte++) {
+-        crc += *data++;
+-    }
+-
+-    return (-crc);
+-}
+-
+-static inline int _a2v(const uint8_t *a)
+-{
+-  uint8_t v = *a;
+-
+-  if ('0' <= v && v <= '9') {
+-    return v - '0';
+-  }
+-  if ('a' <= v && v <= 'f') {
+-    return v - 'a' + 10;
+-  }
+-  if ('A' <= v && v <= 'F') {
+-    return v - 'A' + 10;
+-  }
+-  return -1;
+-}
+-
+-static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
+-{
+-    return ((tlv->type != 0x00) && (tlv->type != 0xFF));
+-}
+-
+-static inline int is_valid_tlvinfo_header(tlvinfo_header_t *hdr)
+-{
+-    int max_size = PRODUCT_EEPROM_LEN;
+-    return((strcmp(hdr->signature, TLV_INFO_ID_STRING) == 0) &&
+-	   (hdr->version == TLV_INFO_VERSION) &&
+-	   (be16_to_cpu(hdr->totallen) <= max_size) );
+-}
+-
+-/* Strip out Spaces and carriage returns */
+-static void delete_space_lf_cr(char *str)
+-{
+-    int i, j;
+-    int len;
+-
+-    if (str == NULL) {
+-        ast_debug( "param error, str is NULL\n");
+-        return;
+-    }
+-    /* Remove all Spaces from the configuration line */
+-    len = strlen(str);
+-    for (i = 0; i < len; i++) {
+-        if (str[i] == '\r' || str[i] == '\n' || str[i] == ' ') {
+-            for (j = i; j < len - 1; j++) {
+-                str[j] = str[j + 1];
+-            }
+-            str[j] = '\0';
+-            len--;
+-            i--;
+-        }
+-    }
+-}
+-
+-static uint64_t mac_to_uint64(u_int8_t *mac_addr)
+-{
+-    return ((uint64_t)mac_addr[0] << 40) |
+-           ((uint64_t)mac_addr[1] << 32) |
+-           ((uint64_t)mac_addr[2] << 24) |
+-           ((uint64_t)mac_addr[3] << 16) |
+-           ((uint64_t)mac_addr[4] << 8) |
+-           (uint64_t)mac_addr[5];
+-}
+-
+-static void uint64_to_mac(uint64_t value, u_int8_t *mac_addr)
+-{
+-    mac_addr[0] = (value >> 40) & 0xFF;
+-    mac_addr[1] = (value >> 32) & 0xFF;
+-    mac_addr[2] = (value >> 24) & 0xFF;
+-    mac_addr[3] = (value >> 16) & 0xFF;
+-    mac_addr[4] = (value >> 8)  & 0xFF;
+-    mac_addr[5] = value & 0xFF;
+-}
+-
+-static void calc_bmc_mac(u_int8_t *mac_addr, int mac_increased)
+-{
+-    u64 base_mac_value, bmc_mac_value;
+-
+-    base_mac_value = mac_to_uint64(mac_addr);
+-    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
+-        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+-    ast_debug("mac_increased: %d, base_mac_value: 0x%llx\n", mac_increased, base_mac_value);
+-
+-    bmc_mac_value = base_mac_value + mac_increased;
+-    uint64_to_mac(bmc_mac_value, mac_addr);
+-    ast_debug("bmc_mac_value: 0x%llx\n", bmc_mac_value);
+-    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
+-        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+-    return;
+-}
+-
+-static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
+-{
+-    char *value;
+-    u_int32_t length;
+-
+-    length = 0;
+-    value = (char *)decode_value->value;
+-
+-    switch (tlv->type) {
+-    case TLV_CODE_PRODUCT_NAME:
+-    case TLV_CODE_MAC_BASE:
+-        if (tlv->length >= PRODUCT_INFO_LEN) {
+-            length = PRODUCT_INFO_LEN - 1;
+-        } else {
+-            length = tlv->length;
+-        }
+-        memcpy(value, tlv->value, length);
+-        value[length] = 0;
+-        break;
+-    default:
+-        printf("Error tlv type: %d.\n", tlv->type);
+-        return -1;
+-    }
+-
+-    decode_value->length = length;
+-    return 0;
+-}
+-
+-static void ext_cmd_decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
+-{
+-    char *value;
+-    u_int32_t length;
+-
+-    length = 0;
+-    value = (char *)decode_value->value;
+-
+-    switch (tlv->type) {
+-    case TLV_CODE_EXT_CARD_ID:
+-        if (tlv->length >= PRODUCT_INFO_LEN) {
+-            length = PRODUCT_INFO_LEN - 1;
+-        } else {
+-            length = tlv->length;
+-        }
+-        memcpy(value, tlv->value, length);
+-        value[length] = 0;
+-    	break;
+-    default:
+-        printf("Error tlv type: %d.\n", tlv->type);
+-        break;
+-    }
+-
+-    decode_value->length = length;
+-}
+-
+-static int is_checksum_valid(u_int8_t *eeprom)
+-{
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlvinfo_tlv_t *eeprom_crc;
+-    unsigned int calc_crc;
+-    unsigned int stored_crc;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    // Is the eeprom header valid?
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-	    return -1;
+-    }
+-
+-    // Is the last TLV a CRC?
+-    eeprom_crc = (tlvinfo_tlv_t *) &eeprom[sizeof(tlvinfo_header_t) +
+-        be16_to_cpu(eeprom_hdr->totallen) - (sizeof(tlvinfo_tlv_t) + 4)];
+-    if ((eeprom_crc->type != TLV_CODE_CRC_32) || (eeprom_crc->length != 4)) {
+-	    return -1;
+-    }
+-
+-    // Calculate the checksum
+-    calc_crc = crc32(0xffffffffL, (const unsigned char *)eeprom, sizeof(tlvinfo_header_t) +
+-		     be16_to_cpu(eeprom_hdr->totallen) - 4);
+-    stored_crc = ((eeprom_crc->value[0] << 24) | (eeprom_crc->value[1] << 16) |
+-		  (eeprom_crc->value[2] <<  8) | eeprom_crc->value[3]);
+-    if (calc_crc != stored_crc) {
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static int tlvinfo_find_tlv(u_int8_t *eeprom, u_int8_t tcode, int *eeprom_index)
+-{
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlvinfo_tlv_t    *eeprom_tlv;
+-    int eeprom_end;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    // Search through the TLVs, looking for the first one which matches the
+-    // supplied type code.
+-    *eeprom_index = sizeof(tlvinfo_header_t);
+-    eeprom_end = sizeof(tlvinfo_header_t) + be16_to_cpu(eeprom_hdr->totallen);
+-    while (*eeprom_index < eeprom_end) {
+-	    eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[*eeprom_index];
+-	    if (!is_valid_tlv(eeprom_tlv)) {
+-            return -1;
+-	    }
+-
+-        if (eeprom_tlv->type == tcode) {
+-	        return 0;
+-	    }
+-
+-	    *eeprom_index += sizeof(tlvinfo_tlv_t) + eeprom_tlv->length;
+-    }
+-
+-    return -1;
+-}
+-
+-static int tlvinfo_find_tlv_ext(tlvinfo_tlv_t *ext_eeprom, u_int8_t extcode, int *ext_eeprom_index)
+-{
+-    tlvinfo_tlv_t    *ext_eeprom_tlv;
+-
+-    // Search through the TLVs, looking for the first one which matches the
+-    // supplied type code.
+-    while (*ext_eeprom_index < ext_eeprom->length) {
+-	    ext_eeprom_tlv = (tlvinfo_tlv_t *) &(ext_eeprom->value)[*ext_eeprom_index];
+-	    if (!is_valid_tlv(ext_eeprom_tlv)) {
+-            return -1;
+-	    }
+-
+-        if (ext_eeprom_tlv->type == extcode) {
+-	        return 0;
+-	    }
+-
+-	    *ext_eeprom_index += sizeof(tlvinfo_tlv_t) + ext_eeprom_tlv->length;
+-    }
+-
+-    return -1;
+-}
+-
+-static int tlvinfo_decode_tlv(u_int8_t *eeprom, u_int8_t tcode, u_int8_t extcode, tlv_decode_value_t *decode_value)
+-{
+-    int eeprom_index = 0;
+-    int ext_eeprom_index = 0;
+-    tlvinfo_tlv_t *eeprom_tlv;
+-    tlvinfo_tlv_t *ext_eeprom_tlv;
+-
+-    if (tcode == TLV_CODE_VENDOR_EXT) {
+-        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
+-            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
+-            if (tlvinfo_find_tlv_ext(eeprom_tlv, extcode, &ext_eeprom_index) == 0) {
+-                ext_eeprom_tlv = (tlvinfo_tlv_t *) &((eeprom_tlv->value)[ext_eeprom_index]);
+-                ext_cmd_decode_tlv_value(ext_eeprom_tlv, decode_value);
+-                return 0;
+-            }
+-            return 0;
+-        }
+-    } else {
+-        // Find the TLV and then decode it
+-        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
+-            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
+-            return decode_tlv_value(eeprom_tlv, decode_value);
+-        }
+-    }
+-
+-    return -1;
+-}
+-
+-static int get_product_name_from_wedge_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
+-{
+-    const uint8_t *cur = &eeprom[FBW_EEPROM_F_PRODUCT_NAME_OFFSET];
+-
+-    if (p_size < FBW_EEPROM_F_PRODUCT_NAME_LEN) {
+-        ast_debug("p_size: %d, is less than wedge eeprom product name length: %d\n",
+-            p_size, FBW_EEPROM_F_PRODUCT_NAME_LEN);
+-        return -1;
+-    }
+-
+-    memcpy(product, cur, FBW_EEPROM_F_PRODUCT_NAME_LEN);
+-    delete_space_lf_cr(product);
+-    return 0;
+-}
+-#if 0
+-static int get_product_name_from_tlv_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_PRODUCT_NAME, TLV_CODE_EXT_NO_CMD, &decode_value);
+-    if (ret != 0) {
+-        printf("No found Product Name\n");
+-        return -1;
+-    }
+-
+-    if (p_size >= decode_value.length) {
+-        memcpy(product, decode_value.value, decode_value.length);
+-    } else {
+-        memcpy(product, decode_value.value, p_size);
+-    }
+-
+-    return 0;
+-}
+-#endif
+-
+-static int get_product_id_from_tlv_eeprom(u_int8_t *eeprom, unsigned long *product_id)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-    int i;
+-    unsigned long tmp_product_id = 0;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_VENDOR_EXT, TLV_CODE_EXT_CARD_ID, &decode_value);
+-    if (ret != 0) {
+-        printf("No found Product ID\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < decode_value.length; i++) {
+-        tmp_product_id = tmp_product_id << 8;
+-        tmp_product_id |= decode_value.value[i];
+-    }
+-
+-    *product_id = tmp_product_id;
+-    ast_debug("tlv_product_id = 0x%lx \n", *product_id);
+-
+-    return 0;
+-}
+-
+-static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+-{
+-    bool ret;
+-    tlvinfo_header_t *eeprom_hdr;
+-    tlv_decode_value_t decode_value;
+-
+-    eeprom_hdr = (tlvinfo_header_t *) eeprom;
+-
+-    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
+-        printf("Failed to check tlv header.\n");
+-        return -1;
+-    }
+-
+-    if (!is_checksum_valid(eeprom)) {
+-        printf("Failed to check tlv crc.\n");
+-        return -1;
+-    }
+-
+-    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
+-    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_MAC_BASE, TLV_CODE_EXT_NO_CMD, &decode_value);
+-    if (ret != 0) {
+-        ast_debug("No found MAC address\n");
+-        return -1;
+-    }
+-
+-    if (decode_value.length != size) {
+-        printf("Invalid mac addr size: %d.\n", decode_value.length);
+-        return -1;
+-    }
+-
+-    memcpy(buf, decode_value.value, size);
+-    return 0;
+-}
+-
+-static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+-{
+-    int i, a2v_tmp1, a2v_tmp2;
+-    const uint8_t *cur = &eeprom[FBW_EEPROM_F_LOCAL_MAC_OFFSET];
+-
+-    if (size < MAC_ADDR_LENGTH) {
+-        ast_debug("mac size buf %d is less than 6\n", size)
+-        return -1;
+-    }
+-
+-    for (i = 0; i < MAC_ADDR_LENGTH; i++) {
+-        a2v_tmp1 = _a2v(cur);
+-        a2v_tmp2 = _a2v(cur + 1);
+-        if ((a2v_tmp1 < 0) || (a2v_tmp2 < 0)) {
+-            printf("Invalid mac address ASCII, index: %d, value: 0x%02x, 0x%02x\n", i * 2, cur[0], cur[1]);
+-            return -1;
+-        }
+-        *buf = ((a2v_tmp1 << 4) | a2v_tmp2) & 0xff;
+-        buf++;
+-        cur += 2;
+-    }
+-    return 0;
+-}
+-
+-static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
+-{
+-    int offset;
+-    int i;
+-    u32 len;
+-
+-    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
+-    /* skip Product Area Format Version, Product Area Length and Language Code */
+-    offset += 3;
+-    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
+-        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
+-            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-                fru_mac_extra_index);
+-            return -1;
+-        }
+-
+-        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+-        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
+-            if (len != MAC_ADDR_LENGTH) {
+-                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
+-                    len, fru_mac_extra_index);
+-                return -1;
+-            }
+-            memcpy(buf, &(eeprom[offset + 1]), size);
+-            return 0;
+-        }
+-        offset += 1;
+-        offset += len;
+-    }
+-
+-    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-        fru_mac_extra_index);
+-    return -1;
+-}
+-
+-static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int ret;
+-    int i;
+-    unsigned long product_id;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    int mac_addr_valid_flag;
+-
+-    /* get dev_info by product id */
+-    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
+-    if (ret < 0) {
+-        return -1;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (product_id == g_dev_info_list[i].dev_type) {
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product id: 0x%lx not found in dev_info_list.\n", product_id);
+-        return -1;
+-    }
+-
+-    /* onie-tlv eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_ONIE_TLV);
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int i, ret;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    char product[PRODUCT_INFO_LEN];
+-    int mac_addr_valid_flag;
+-
+-    /* get dev_info by product name */
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product name: %s not found in dev_info_list.\n", product);
+-        return -1;
+-    }
+-    /* wedge eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_WEDGE);
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int i, ret, offset;
+-    u_int8_t mac_addr[MAC_ADDR_LENGTH];
+-    char product[PRODUCT_INFO_LEN];
+-    int mac_addr_valid_flag;
+-    u8 crc;
+-    u32 len;
+-
+-    crc = calculate_crc(eeprom, IPMI_FRU_COMMON_HEADER - 1);
+-    if (crc != eeprom[IPMI_FRU_COMMON_HEADER - 1]) {
+-        printf("Invalid fru header crc: 0x%02x(must 0x%02x).\n", eeprom[IPMI_FRU_COMMON_HEADER - 1], crc);
+-        return -1;
+-    }
+-
+-    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
+-    if (offset > PRODUCT_EEPROM_LEN) {
+-        printf("Error product area offset: %d.\n", offset);
+-        return -1;
+-    }
+-
+-    memset(product, 0, sizeof(product));
+-    /* skip Product Area Format Version, Product Area Length and Language Code */
+-    offset += 3;
+-    for (i = 0; i < IPMI_FRU_PRODUCT_NAME_INDEX; i++) {
+-        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+-        if ((i+1) == IPMI_FRU_PRODUCT_NAME_INDEX) {
+-            if (len >= PRODUCT_INFO_LEN) {
+-                printf("Error: prodcut name length: %d\n", len);
+-                len = PRODUCT_INFO_LEN - 1;
+-            }
+-            memcpy(product, &(eeprom[offset + 1]), len);
+-            break;
+-        }
+-        offset += 1;
+-        offset += len;
+-    }
+-
+-    if (i == IPMI_FRU_PRODUCT_NAME_INDEX) {
+-        printf("No found product name from fru eeprom.\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+-        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            break;
+-        }
+-    }
+-
+-    if (i == ARRAY_SIZE(g_dev_info_list)) {
+-        printf("Product name: %s not found in dev_info_list.\n", product);
+-        return -1;
+-    }
+-
+-    /* fru eeprom match product name */
+-    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
+-    if ((*dev_info)->fru_mac_extra_index == 1) {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_B);
+-    } else if ((*dev_info)->fru_mac_extra_index == 2) {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_A);
+-    } else {
+-        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "sysfru-%d", (*dev_info)->fru_mac_extra_index);
+-    }
+-
+-    /* get MAC addr */
+-    memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
+-    if (ret < 0) {
+-        ast_debug("Failed to read mac address\n");
+-        mac_addr_valid_flag = 0;
+-    } else {
+-        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
+-        if (is_valid_ethaddr(mac_addr)) {
+-            mac_addr_valid_flag = 1;
+-        } else {
+-            mac_addr_valid_flag = 0;
+-        }
+-    }
+-
+-    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+-    if (mac_addr_valid_flag) {
+-        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
+-    }
+-
+-    return 0;
+-}
+-
+-static int pca9641_set_bus(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl, reg_sts;
+-
+-    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    ret = dm_i2c_read(dev, PCA9641_STATUS, &reg_sts, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    reg_ctl |= PCA9641_CTL_PRIORITY; /* set pca9641 priority */
+-    if (BUSOFF(reg_ctl, reg_sts)) {
+-        reg_ctl |= PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-
+-        ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to read pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-
+-        if (lock_grant(reg_ctl)) {
+-            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
+-            ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-            if (ret < 0) {
+-                ast_debug("Failed to write pca9641: 0x%02x.(busoff, lock_grant)\n", PCA9641_CONTROL);
+-                return -1;
+-            }
+-        } else {
+-            return -1;
+-        }
+-    } else if (lock_grant(reg_ctl)) {
+-        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(lock_grant)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-    } else if (other_lock(reg_sts)) {
+-        reg_ctl |= PCA9641_CTL_LOCK_REQ;
+-        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-        if (ret < 0) {
+-            ast_debug("Failed to write pca9641: 0x%02x.(other_lock)\n", PCA9641_CONTROL);
+-            return -1;
+-        }
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static int pca9641_detect(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl;
+-
+-    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to read pca9641.\n");
+-        return -1;
+-    }
+-
+-    return 0;
+-}
+-
+-static void pca9641_release_bus(struct udevice *dev)
+-{
+-    int ret;
+-    u8 reg_ctl;
+-
+-    reg_ctl = 0;
+-    ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
+-    if (ret < 0) {
+-        ast_debug("Failed to release pca9641: 0x%02x.\n", PCA9641_CONTROL);
+-    }
+-
+-}
+-#if 0
+-static int get_product_name_match(u_int8_t *eeprom, dev_info_t **dev_info)
+-{
+-    int ret;
+-    int i;
+-    char product[PRODUCT_INFO_LEN];
+-
+-    memset(product, 0, sizeof(product));
+-    ret = get_product_name_from_tlv_eeprom(eeprom, product, sizeof(product) - 1);
+-    if (ret < 0) {
+-        return ret;
+-    }
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
+-        if ( strcmp(product, g_dev_info_list[i].dev_name ) == 0 ) {
+-            /* name match */
+-            *dev_info = &g_dev_info_list[i];
+-            return 0;
+-        }
+-    }
+-
+-    return -1;
+-}
+-#endif
+-static int pca9641_get_eeprom(struct udevice *pca9641_dev, struct udevice *e2_dev, int addr)
+-{
+-    int ret;
+-    int i;
+-
+-    /* detect pca9641, if fail, return */
+-    for (i = 0; i < PCA9641_DETECT_TRY_TIMES; i++) {
+-        ret = pca9641_detect(pca9641_dev);
+-        if (ret == 0) {
+-            break;
+-        }
+-        udelay(PCA9641_DETECT_DELAY_TIME * 1000);
+-    }
+-
+-    if (i == PCA9641_DETECT_TRY_TIMES) {
+-        ast_debug("Failed to detect pca9641.\n");
+-        return -1;
+-    }
+-
+-    for (i = 0; i < PCA9641_TRY_TIMES; i++) {
+-        ret = pca9641_set_bus(pca9641_dev);
+-        if (ret == 0) {
+-            break;
+-        }
+-        udelay(PCA9641_DELAY_TIME * 1000);
+-    }
+-
+-    if (i == PCA9641_TRY_TIMES) {
+-        ast_debug("Failed to set pca9641 bus.\n");
+-        pca9641_release_bus(pca9641_dev);
+-        return -1;
+-    }
+-
+-    ret = dm_i2c_read(e2_dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
+-        pca9641_release_bus(pca9641_dev);
+-        return -1;
+-    }
+-
+-    pca9641_release_bus(pca9641_dev);
+-
+-    return 0;
+-}
+-
+-static int normal_get_eeprom(struct udevice *dev, int addr)
+-{
+-    int ret;
+-
+-    ret = dm_i2c_read(dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
+-        return -1;
+-    }
+-    return 0;
+-}
+-
+-static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_info)
+-{
+-    struct udevice *bus, *e2_dev, *pca9641_dev;
+-    int ret = -1;
+-
+-    ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
+-
+-    ret = uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
+-    if (ret) {
+-        printf("get i2c-%d adapter fail, ret : %d!! \n", tmp_eeprom_list->bus, ret);
+-        return ret;
+-    }
+-    ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
+-    if (ret) {
+-        ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
+-            tmp_eeprom_list->bus, tmp_eeprom_list->addr, ret);
+-        return -1;
+-    }
+-    ast_debug("get eeprom chip success\n");
+-
+-    if (tmp_eeprom_list->is_pca9641 == IS_PCA9641) {
+-        ret = i2c_get_chip(bus, PCA9641_ADDR, 1, &pca9641_dev);
+-        if (ret) {
+-            ast_debug("get pca9641 chip failed, bus: %d, addr: 0x%x, ret: %d\n",
+-                tmp_eeprom_list->bus, PCA9641_ADDR, ret);
+-            return -1;
+-        }
+-        ast_debug("get pca9641 chip success\n");
+-        ret = pca9641_get_eeprom(pca9641_dev, e2_dev, tmp_eeprom_list->addr);
+-    } else {
+-        ret = normal_get_eeprom(e2_dev, tmp_eeprom_list->addr);
+-    }
+-
+-    if (ret < 0) {
+-        ast_debug("Failed to read eeprom.\n");
+-        return ret;
+-    }
+-
+-    /* wedge eeprom magic */
+-    if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
+-        ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
+-    } else if (eeprom[0] == IPMI_FRU_HDR_BYTE_ZERO) {
+-        ret = get_dev_info_from_fru_eeprom(eeprom, dev_info);
+-    } else {
+-        ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
+-    }
+-
+-    return ret;
+-}
+-
+-static int save_mac_addr(dev_info_t *dev_info, char *env_mac_name)
+-{
+-    char mac_addr_str[PRODUCT_INFO_LEN];
+-    char *p_mac_addr;
+-
+-    memset(mac_addr_str, 0, sizeof(mac_addr_str));
+-    if (dev_info->mac_addr_valid_flag) {
+-        snprintf(mac_addr_str, sizeof(mac_addr_str), "%pM", dev_info->mac_addr);
+-        p_mac_addr = env_get(env_mac_name);
+-        if ((p_mac_addr == NULL) || (strcmp(p_mac_addr, mac_addr_str) != 0)) {
+-            env_set(env_mac_name, mac_addr_str);
+-            ast_debug("Set %s to flash env...\n", env_mac_name);
+-            return 1;
+-        }
+-    }
+-    return 0;
+-}
+-
+-static void save_product_name(dev_info_t *dev_info)
+-{
+-    u32 len;
+-    char fit[PRODUCT_INFO_LEN];
+-    char board_id_str[PRODUCT_INFO_LEN];
+-    char mac_increased_str[PRODUCT_INFO_LEN];
+-    char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
+-    char *p_mac_increased, *p_syseeprom_type;
+-    int is_save_flag;
+-    int i;
+-    char *debug_product;
+-
+-    /* ......productname . conffitname */
+-    debug_product = env_get(ENV_PRODUCT_DEBUG);
+-    if (debug_product != NULL && (strcmp(debug_product, ENV_PRODUCT_DEBUG_VAL) == 0)) {
+-        printf("Debug mode...\n");
+-        return;
+-    }
+-
+-    if (dev_info == NULL) {
+-        printf("dev_info is NULL, can't get product info.\n");
+-        return;
+-    }
+-
+-    is_save_flag = 0;
+-    /* productname.. */
+-    env_product = env_get(ENV_PRODUCT_NAME);
+-    if (env_product == NULL || strcmp(dev_info->dev_name, env_product) != 0) {
+-        env_set(ENV_PRODUCT_NAME, dev_info->dev_name);
+-        env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_FLAG_VAL);
+-        is_save_flag = 1;
+-    } else {
+-        save_flag = env_get(ENV_PRODUCT_FLAG_NAME);
+-        if (strcmp(save_flag, ENV_PRODUCT_FLAG_VAL) == 0) {
+-            env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_NO_FLAG_VAL);
+-            is_save_flag = 1;
+-        }
+-    }
+-
+-    /* conffitname.. */
+-    def_fit_name = dev_info->conffit_name;
+-    memset(fit, 0, PRODUCT_INFO_LEN);
+-    len = (strlen(def_fit_name) >= PRODUCT_INFO_LEN) ? (PRODUCT_INFO_LEN - 1) : strlen(def_fit_name);
+-    for (i = 0; i < len; i++) {
+-        if (def_fit_name[i] >= 'A' && def_fit_name[i] <= 'Z') {
+-            fit[i] = def_fit_name[i] + 32;
+-        } else {
+-            fit[i] = def_fit_name[i];
+-        }
+-    }
+-    fit_name = env_get(ENV_CONF_FIT_NAME);
+-    if (fit_name == NULL || strcmp(fit, fit_name) != 0) {
+-        env_set(ENV_CONF_FIT_NAME, fit);
+-        is_save_flag = 1;
+-    }
+-
+-    /* board_id */
+-    memset(board_id_str, 0, sizeof(board_id_str));
+-    snprintf(board_id_str, sizeof(board_id_str), "0x%x", dev_info->dev_type);
+-    p_board_id = env_get(ENV_BOARD_ID);
+-    if (p_board_id == NULL || strcmp(p_board_id, board_id_str) != 0) {
+-        env_set(ENV_BOARD_ID, board_id_str);
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac addr */
+-    if (save_mac_addr(dev_info, ENV_MAC_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac0 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC0_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-    /* mac1 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC1_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac2 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC2_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-    /* mac3 addr */
+-    if (save_mac_addr(dev_info, ENV_MAC3_ADDR)) {
+-        is_save_flag = 1;
+-    }
+-
+-    /* eth prime */
+-    env_eth_prime = env_get(ENV_ETH_PRIME);
+-    if (env_eth_prime == NULL || strcmp(dev_info->eth_prime, env_eth_prime) != 0) {
+-        env_set(ENV_ETH_PRIME, dev_info->eth_prime);
+-        is_save_flag = 1;
+-    }
+-
+-    /* mac_increased */
+-    memset(mac_increased_str, 0, sizeof(mac_increased_str));
+-    snprintf(mac_increased_str, sizeof(mac_increased_str), "%d", dev_info->mac_increased);
+-    p_mac_increased = env_get(ENV_MAC_INCREASED);
+-    if (p_mac_increased == NULL || strcmp(p_mac_increased, mac_increased_str) != 0) {
+-        env_set(ENV_MAC_INCREASED, mac_increased_str);
+-        is_save_flag = 1;
+-    }
+-
+-    /* syseeprom_type */
+-    p_syseeprom_type = env_get(ENV_SYSEEPROM_TYPE);
+-    if (p_syseeprom_type == NULL) {
+-        if (strlen(dev_info->syseeprom_type) == 0) {
+-            env_set(ENV_SYSEEPROM_TYPE, E2TYPE_UNKNOWN);
+-        } else {
+-            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
+-        }
+-        is_save_flag = 1;
+-    } else {
+-        if ((strlen(dev_info->syseeprom_type) != 0) && (strcmp(dev_info->syseeprom_type, p_syseeprom_type) != 0)) {
+-            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
+-            is_save_flag = 1;
+-        }
+-    }
+-
+-    if (is_save_flag) {
+-        ast_debug("save_env\n");
+-        env_save();
+-    }
+-}
+-
+-static void product_name_match(void)
+-{
+-    int i;
+-    int ret = -1;
+-    char *env_board_id;
+-    dev_info_t *dev_info;
+-    unsigned long board_id;
+-
+-    dev_info = NULL;
+-    for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
+-        ret = get_product_name(&g_eeprom_list[i], &dev_info);
+-        if (ret >= 0) {
+-            ast_debug("match ok, board_id: 0x%x, productname: %s, conffitname: %s\n",
+-                dev_info->dev_type, dev_info->dev_name, dev_info->conffit_name);
+-            break;
+-        }
+-    }
+-
+-    if (ret < 0) {
+-        env_board_id = env_get(ENV_BOARD_ID);
+-        if (env_board_id == NULL) {
+-            printf("Failed to get product from eeprom\nSet default product: %s\n", g_dev_info_list[0].dev_name);
+-            /* read board id failed, default load g_dev_info_list[0] */
+-            dev_info = &g_dev_info_list[0];
+-        } else { /* ENV have board ID */
+-            /* board ID match dev_info */
+-            board_id = simple_strtoul(env_board_id, NULL, 16);
+-            printf("Get board id from env, board_id: 0x%lx\n", board_id);
+-            for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
+-                if (g_dev_info_list[i].dev_type == board_id) {
+-                    /* board id match */
+-                    dev_info = &g_dev_info_list[i];
+-                    break;
+-                }
+-            }
+-        }
+-    }
+-
+-    save_product_name(dev_info);
+-    g_dev_info = dev_info;
+-    return;
+-}
+ 
+ #define FMC_CTRL_BASE   (0x1e620000)
+ void set_fmc_wdt_timeout(void)
+diff --git a/configs/wb-ast2600-9600_defconfig b/configs/wb-ast2600-9600_defconfig
+new file mode 100644
+index 00000000..129e592c
+--- /dev/null
++++ b/configs/wb-ast2600-9600_defconfig
+@@ -0,0 +1,102 @@
++CONFIG_ARM=y
++CONFIG_SYS_DCACHE_OFF=y
++CONFIG_ARCH_ASPEED=y
++CONFIG_SYS_TEXT_BASE=0x0
++CONFIG_ASPEED_AST2600=y
++CONFIG_TARGET_WB_AST_GEN_6=y
++CONFIG_SYS_MALLOC_F_LEN=0x800
++CONFIG_ARMV7_BOOT_SEC_DEFAULT=y
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_FIT=y
++CONFIG_USE_BOOTARGS=y
++CONFIG_BOOTARGS="console=ttyS4,9600n8 root=/dev/ram rw"
++CONFIG_BAUDRATE=9600
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="bootm 20140000 || run switchflash"
++CONFIG_SYS_CONSOLE_ENV_OVERWRITE=y
++CONFIG_DISPLAY_BOARDINFO_LATE=y
++CONFIG_ARCH_EARLY_INIT_R=y
++CONFIG_BOARD_EARLY_INIT_F=y
++CONFIG_BOARD_LATE_INIT=y
++CONFIG_HUSH_PARSER=y
++# CONFIG_AUTO_COMPLETE is not set
++CONFIG_SYS_PROMPT="wb-boot=> "
++CONFIG_CMD_MEMTEST=y
++CONFIG_SYS_ALT_MEMTEST=y
++CONFIG_CMD_CLK=y
++CONFIG_CMD_GPIO=y
++CONFIG_CMD_I2C=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_PART=y
++CONFIG_CMD_PCI=y
++CONFIG_CMD_SF=y
++CONFIG_CMD_USB=y
++CONFIG_CMD_DHCP=y
++CONFIG_CMD_MII=y
++CONFIG_CMD_PING=y
++CONFIG_CMD_EXT2=y
++CONFIG_CMD_EXT4=y
++CONFIG_CMD_EXT4_WRITE=y
++CONFIG_CMD_FAT=y
++CONFIG_CMD_FS_GENERIC=y
++CONFIG_CMD_MTDPARTS=y
++CONFIG_DEFAULT_DEVICE_TREE="wb_ast2600"
++CONFIG_SYS_CONFIG_NAME="wb_ast2600"
++CONFIG_ENV_IS_IN_SPI_FLASH=y
++CONFIG_USE_ENV_SPI_BUS=y
++CONFIG_ENV_SPI_BUS=0
++CONFIG_USE_ENV_SPI_CS=y
++CONFIG_ENV_SPI_CS=0
++CONFIG_USE_ENV_SPI_MAX_HZ=y
++CONFIG_ENV_SPI_MAX_HZ=100000000
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_REGMAP=y
++CONFIG_SYSCON=y
++CONFIG_CLK=y
++CONFIG_DM_GPIO=y
++CONFIG_ASPEED_GPIO=y
++CONFIG_DM_I2C=y
++CONFIG_SYS_I2C_ASPEED=y
++CONFIG_MISC=y
++CONFIG_ASPEED_AHBC=y
++CONFIG_ASPEED_H2X=y
++CONFIG_ASPEED_DP=y
++CONFIG_DM_MMC=y
++CONFIG_MMC_SDHCI=y
++CONFIG_MMC_SDHCI_ASPEED=y
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH=y
++CONFIG_SPI_FLASH_GIGADEVICE=y
++CONFIG_SPI_FLASH_ISSI=y
++CONFIG_SPI_FLASH_MACRONIX=y
++CONFIG_SPI_FLASH_SPANSION=y
++CONFIG_SPI_FLASH_STMICRO=y
++CONFIG_SPI_FLASH_WINBOND=y
++CONFIG_PHY_BROADCOM=y
++CONFIG_PHY_REALTEK=y
++CONFIG_DM_ETH=y
++CONFIG_PHY_GIGE=y
++CONFIG_FTGMAC100=y
++CONFIG_MDIO=y
++CONFIG_PCI=y
++CONFIG_DM_PCI=y
++CONFIG_PCIE_ASPEED=y
++CONFIG_PHY=y
++CONFIG_PINCTRL=y
++CONFIG_RAM=y
++CONFIG_DM_SERIAL=y
++CONFIG_SYS_NS16550=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_SYSRESET=y
++CONFIG_USB=y
++CONFIG_DM_USB=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_STORAGE=y
++CONFIG_WDT=y
++CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
++CONFIG_PHY_FIXED=y
++CONFIG_PHY_NCSI=y
++CONFIG_CMD_NCSI=y
++CONFIG_ASPEED_ECC=y
++CONFIG_CMD_NETTEST=y
+diff --git a/configs/wb-ast2600_defconfig b/configs/wb-ast2600_defconfig
+index 47f5a7a7..92af8718 100644
+--- a/configs/wb-ast2600_defconfig
++++ b/configs/wb-ast2600_defconfig
+@@ -98,3 +98,4 @@ CONFIG_PHY_FIXED=y
+ CONFIG_PHY_NCSI=y
+ CONFIG_CMD_NCSI=y
+ CONFIG_ASPEED_ECC=y
++CONFIG_CMD_NETTEST=y
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 880dbbab..a8ea4c06 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -1,5 +1,7 @@
+ # SPDX-License-Identifier: GPL-2.0+
+ 
++obj-y += ssp/
++
+ obj-$(CONFIG_$(SPL_TPL_)CLK) += clk/
+ obj-$(CONFIG_$(SPL_TPL_)DM) += core/
+ obj-$(CONFIG_$(SPL_TPL_)DFU) += dfu/
+@@ -116,4 +118,5 @@ obj-$(CONFIG_W1_EEPROM) += w1-eeprom/
+ 
+ obj-$(CONFIG_MACH_PIC32) += ddr/microchip/
+ obj-$(CONFIG_DM_HWSPINLOCK) += hwspinlock/
++
+ endif
+diff --git a/drivers/mtd/spi/spi-nor-core.c b/drivers/mtd/spi/spi-nor-core.c
+index 6387c5c1..a44d4dae 100644
+--- a/drivers/mtd/spi/spi-nor-core.c
++++ b/drivers/mtd/spi/spi-nor-core.c
+@@ -1044,6 +1044,7 @@ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
+ {
+ 	int			tmp;
+ 	u8			id[SPI_NOR_MAX_ID_LEN];
++    ulong ulID;
+ 	const struct flash_info	*info;
+ 
+ 	tmp = nor->read_reg(nor, SPINOR_OP_RDID, id, SPI_NOR_MAX_ID_LEN);
+@@ -1055,8 +1056,11 @@ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
+ 	info = spi_nor_ids;
+ 	for (; info->name; info++) {
+ 		if (info->id_len) {
+-			if (!memcmp(info->id, id, info->id_len))
++			if (!memcmp(info->id, id, info->id_len)) {
++                ulID = ((ulong)id[0]) | ((ulong)id[1] << 8) | ((ulong)id[2] << 16) ;
++                printf("\nflash ID: %lx\n", ulID);
+ 				return info;
++            }
+ 		}
+ 	}
+ 
+diff --git a/drivers/ssp/Makefile b/drivers/ssp/Makefile
+new file mode 100755
+index 00000000..31dbe4b7
+--- /dev/null
++++ b/drivers/ssp/Makefile
+@@ -0,0 +1,5 @@
++# SPDX-License-Identifier: GPL-2.0+
++#
++# (C) Copyright 2017
++# Mario Six,  Guntermann & Drunck GmbH, mario.six@gdsys.cc
++obj-y += platform_common_module.o
+diff --git a/drivers/ssp/platform_common_module.c b/drivers/ssp/platform_common_module.c
+new file mode 100755
+index 00000000..0b4449f1
+--- /dev/null
++++ b/drivers/ssp/platform_common_module.c
+@@ -0,0 +1,1139 @@
++#include <common.h>
++#include <asm/io.h>
++#include <environment.h>
++#include <i2c.h>
++#include <dm/uclass.h>
++#include <fdt_support.h>
++#include <platform_common_module.h>
++#include <configs/product_info.h>
++
++u8 eeprom[PRODUCT_EEPROM_LEN];
++
++typedef struct product_map_s {
++    char productname[PRODUCT_INFO_LEN];
++    char fitname[PRODUCT_INFO_LEN];
++} product_map_t;
++
++product_map_t fit_product_list[] = {
++    {"NONE", "none"},
++};
++static dev_info_t *g_dev_info = NULL;
++
++static u8 calculate_crc(const u8 *data, int len)
++{
++    char crc;
++    int byte;
++
++    crc = 0;
++    for(byte = 0; byte < len; byte++) {
++        crc += *data++;
++    }
++
++    return (-crc);
++}
++
++static inline int _a2v(const uint8_t *a)
++{
++  uint8_t v = *a;
++
++  if ('0' <= v && v <= '9') {
++    return v - '0';
++  }
++  if ('a' <= v && v <= 'f') {
++    return v - 'a' + 10;
++  }
++  if ('A' <= v && v <= 'F') {
++    return v - 'A' + 10;
++  }
++  return -1;
++}
++
++static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
++{
++    return ((tlv->type != 0x00) && (tlv->type != 0xFF));
++}
++
++static inline int is_valid_tlvinfo_header(tlvinfo_header_t *hdr)
++{
++    int max_size = PRODUCT_EEPROM_LEN;
++    return((strcmp(hdr->signature, TLV_INFO_ID_STRING) == 0) &&
++	   (hdr->version == TLV_INFO_VERSION) &&
++	   (be16_to_cpu(hdr->totallen) <= max_size) );
++}
++
++/* Strip out Spaces and carriage returns */
++static void delete_space_lf_cr(char *str)
++{
++    int i, j;
++    int len;
++
++    if (str == NULL) {
++        ast_debug( "param error, str is NULL\n");
++        return;
++    }
++    /* Remove all Spaces from the configuration line */
++    len = strlen(str);
++    for (i = 0; i < len; i++) {
++        if (str[i] == '\r' || str[i] == '\n' || str[i] == ' ') {
++            for (j = i; j < len - 1; j++) {
++                str[j] = str[j + 1];
++            }
++            str[j] = '\0';
++            len--;
++            i--;
++        }
++    }
++}
++
++static uint64_t mac_to_uint64(u_int8_t *mac_addr)
++{
++    return ((uint64_t)mac_addr[0] << 40) |
++           ((uint64_t)mac_addr[1] << 32) |
++           ((uint64_t)mac_addr[2] << 24) |
++           ((uint64_t)mac_addr[3] << 16) |
++           ((uint64_t)mac_addr[4] << 8) |
++           (uint64_t)mac_addr[5];
++}
++
++static void uint64_to_mac(uint64_t value, u_int8_t *mac_addr)
++{
++    mac_addr[0] = (value >> 40) & 0xFF;
++    mac_addr[1] = (value >> 32) & 0xFF;
++    mac_addr[2] = (value >> 24) & 0xFF;
++    mac_addr[3] = (value >> 16) & 0xFF;
++    mac_addr[4] = (value >> 8)  & 0xFF;
++    mac_addr[5] = value & 0xFF;
++}
++
++static void calc_bmc_mac(u_int8_t *mac_addr, int mac_increased)
++{
++    u64 base_mac_value, bmc_mac_value;
++
++    base_mac_value = mac_to_uint64(mac_addr);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
++    ast_debug("mac_increased: %d, base_mac_value: 0x%llx\n", mac_increased, base_mac_value);
++
++    bmc_mac_value = base_mac_value + mac_increased;
++    uint64_to_mac(bmc_mac_value, mac_addr);
++    ast_debug("bmc_mac_value: 0x%llx\n", bmc_mac_value);
++    ast_debug("mac[0]: 0x%02x, mac[1]: 0x%02x, mac[2]: 0x%02x, mac[3]: 0x%02x, mac[4]: 0x%02x, mac[5]: 0x%02x\n",
++        mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
++    return;
++}
++
++static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    length = 0;
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_PRODUCT_NAME:
++    case TLV_CODE_MAC_BASE:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++        break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        return -1;
++    }
++
++    decode_value->length = length;
++    return 0;
++}
++
++static void ext_cmd_decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    length = 0;
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_EXT_CARD_ID:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++    	break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        break;
++    }
++
++    decode_value->length = length;
++}
++
++static int is_checksum_valid(u_int8_t *eeprom)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t *eeprom_crc;
++    unsigned int calc_crc;
++    unsigned int stored_crc;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Is the eeprom header valid?
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++	    return -1;
++    }
++
++    // Is the last TLV a CRC?
++    eeprom_crc = (tlvinfo_tlv_t *) &eeprom[sizeof(tlvinfo_header_t) +
++        be16_to_cpu(eeprom_hdr->totallen) - (sizeof(tlvinfo_tlv_t) + 4)];
++    if ((eeprom_crc->type != TLV_CODE_CRC_32) || (eeprom_crc->length != 4)) {
++	    return -1;
++    }
++
++    // Calculate the checksum
++    calc_crc = crc32(0xffffffffL, (const unsigned char *)eeprom, sizeof(tlvinfo_header_t) +
++		     be16_to_cpu(eeprom_hdr->totallen) - 4);
++    stored_crc = ((eeprom_crc->value[0] << 24) | (eeprom_crc->value[1] << 16) |
++		  (eeprom_crc->value[2] <<  8) | eeprom_crc->value[3]);
++    if (calc_crc != stored_crc) {
++        return -1;
++    }
++
++    return 0;
++}
++
++static int tlvinfo_find_tlv(u_int8_t *eeprom, u_int8_t tcode, int *eeprom_index)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t    *eeprom_tlv;
++    int eeprom_end;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    *eeprom_index = sizeof(tlvinfo_header_t);
++    eeprom_end = sizeof(tlvinfo_header_t) + be16_to_cpu(eeprom_hdr->totallen);
++    while (*eeprom_index < eeprom_end) {
++	    eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[*eeprom_index];
++	    if (!is_valid_tlv(eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (eeprom_tlv->type == tcode) {
++	        return 0;
++	    }
++
++	    *eeprom_index += sizeof(tlvinfo_tlv_t) + eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_find_tlv_ext(tlvinfo_tlv_t *ext_eeprom, u_int8_t extcode, int *ext_eeprom_index)
++{
++    tlvinfo_tlv_t    *ext_eeprom_tlv;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    while (*ext_eeprom_index < ext_eeprom->length) {
++	    ext_eeprom_tlv = (tlvinfo_tlv_t *) &(ext_eeprom->value)[*ext_eeprom_index];
++	    if (!is_valid_tlv(ext_eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (ext_eeprom_tlv->type == extcode) {
++	        return 0;
++	    }
++
++	    *ext_eeprom_index += sizeof(tlvinfo_tlv_t) + ext_eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_decode_tlv(u_int8_t *eeprom, u_int8_t tcode, u_int8_t extcode, tlv_decode_value_t *decode_value)
++{
++    int eeprom_index = 0;
++    int ext_eeprom_index = 0;
++    tlvinfo_tlv_t *eeprom_tlv;
++    tlvinfo_tlv_t *ext_eeprom_tlv;
++
++    if (tcode == TLV_CODE_VENDOR_EXT) {
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            if (tlvinfo_find_tlv_ext(eeprom_tlv, extcode, &ext_eeprom_index) == 0) {
++                ext_eeprom_tlv = (tlvinfo_tlv_t *) &((eeprom_tlv->value)[ext_eeprom_index]);
++                ext_cmd_decode_tlv_value(ext_eeprom_tlv, decode_value);
++                return 0;
++            }
++            return 0;
++        }
++    } else {
++        // Find the TLV and then decode it
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            return decode_tlv_value(eeprom_tlv, decode_value);
++        }
++    }
++
++    return -1;
++}
++
++static int get_product_name_from_wedge_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_PRODUCT_NAME_OFFSET];
++
++    if (p_size < FBW_EEPROM_F_PRODUCT_NAME_LEN) {
++        ast_debug("p_size: %d, is less than wedge eeprom product name length: %d\n",
++            p_size, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++        return -1;
++    }
++
++    memcpy(product, cur, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++    delete_space_lf_cr(product);
++    return 0;
++}
++#if 0
++static int get_product_name_from_tlv_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_PRODUCT_NAME, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        printf("No found Product Name\n");
++        return -1;
++    }
++
++    if (p_size >= decode_value.length) {
++        memcpy(product, decode_value.value, decode_value.length);
++    } else {
++        memcpy(product, decode_value.value, p_size);
++    }
++
++    return 0;
++}
++#endif
++
++static int get_product_id_from_tlv_eeprom(u_int8_t *eeprom, unsigned long *product_id)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++    int i;
++    unsigned long tmp_product_id = 0;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_VENDOR_EXT, TLV_CODE_EXT_CARD_ID, &decode_value);
++    if (ret != 0) {
++        printf("No found Product ID\n");
++        return -1;
++    }
++
++    for (i = 0; i < decode_value.length; i++) {
++        tmp_product_id = tmp_product_id << 8;
++        tmp_product_id |= decode_value.value[i];
++    }
++
++    *product_id = tmp_product_id;
++    ast_debug("tlv_product_id = 0x%lx \n", *product_id);
++
++    return 0;
++}
++
++static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_MAC_BASE, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        ast_debug("No found MAC address\n");
++        return -1;
++    }
++
++    if (decode_value.length != size) {
++        printf("Invalid mac addr size: %d.\n", decode_value.length);
++        return -1;
++    }
++
++    memcpy(buf, decode_value.value, size);
++    return 0;
++}
++
++static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    int i, a2v_tmp1, a2v_tmp2;
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_LOCAL_MAC_OFFSET];
++
++    if (size < MAC_ADDR_LENGTH) {
++        ast_debug("mac size buf %d is less than 6\n", size)
++        return -1;
++    }
++
++    for (i = 0; i < MAC_ADDR_LENGTH; i++) {
++        a2v_tmp1 = _a2v(cur);
++        a2v_tmp2 = _a2v(cur + 1);
++        if ((a2v_tmp1 < 0) || (a2v_tmp2 < 0)) {
++            printf("Invalid mac address ASCII, index: %d, value: 0x%02x, 0x%02x\n", i * 2, cur[0], cur[1]);
++            return -1;
++        }
++        *buf = ((a2v_tmp1 << 4) | a2v_tmp2) & 0xff;
++        buf++;
++        cur += 2;
++    }
++    return 0;
++}
++
++static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
++{
++    int offset;
++    int i;
++    u32 len;
++
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    /* skip Product Area Format Version, Product Area Length and Language Code */
++    offset += 3;
++    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
++        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
++            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++                fru_mac_extra_index);
++            return -1;
++        }
++
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
++            if (len != MAC_ADDR_LENGTH) {
++                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
++                    len, fru_mac_extra_index);
++                return -1;
++            }
++            memcpy(buf, &(eeprom[offset + 1]), size);
++            return 0;
++        }
++        offset += 1;
++        offset += len;
++    }
++
++    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++        fru_mac_extra_index);
++    return -1;
++}
++
++static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    unsigned long product_id;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    int mac_addr_valid_flag;
++
++    /* get dev_info by product id */
++    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
++    if (ret < 0) {
++        return -1;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (product_id == g_dev_info_list[i].dev_type) {
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product id: 0x%lx not found in dev_info_list.\n", product_id);
++        return -1;
++    }
++
++    /* onie-tlv eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_ONIE_TLV);
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++    }
++
++    return 0;
++}
++
++static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    char product[PRODUCT_INFO_LEN];
++    int mac_addr_valid_flag;
++
++    /* get dev_info by product name */
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++    /* wedge eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_WEDGE);
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++    }
++
++    return 0;
++}
++
++static int get_fru_info(char *fru_info, int fru_len, int fru_offset)
++{
++    int offset;
++    u32 len;
++    int i;
++
++    /* Get product area start offset */
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    if (offset > sizeof(eeprom)) {
++        printf("Error product fru eeprom offset: %d.\n", offset);
++        return -1;
++    }
++
++    /* FRU porduct area skip 3-bytes to get product name directly */
++    offset += 3;
++    for (i = 0; i < fru_offset; i++) {
++        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
++            printf("No found fru info.\n");
++            return -1;
++        }
++
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i + 1) == fru_offset) {
++            if (len >= fru_len) {
++                printf("Error: length: %d\n", len);
++                len = fru_len - 1;
++            }
++            memcpy((void *)fru_info, &(eeprom[offset + 1]), len);
++            return 0;
++        }
++
++        offset += len;
++        offset += 1;
++    }
++
++    printf("End, No found fru_info.\n");
++    return -1;
++}
++
++
++static int get_dev_info_from_list_by_fru_fileid(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, boardid, ret;
++    char cardid[PRODUCT_INFO_LEN];
++
++    memset(cardid, 0, sizeof(cardid));
++    ret = get_fru_info(cardid, sizeof(cardid), IPMI_FRU_PRODUCT_FRU_FILEID_INDEX);
++    if (ret < 0) {
++        printf("No found cardid from fru eeprom.\n");
++        return -1;
++    }
++
++    boardid = simple_strtoul(cardid, NULL, 16);
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (g_dev_info_list[i].dev_type == boardid) {
++            /* cardid match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++         printf("cardid: %s not found in dev_info_list.\n", cardid);
++         return -1;
++    }
++
++    return 0;
++}
++
++
++static int get_dev_info_from_list_by_product_name(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret;
++    char product[PRODUCT_INFO_LEN];  
++
++    memset(product, 0, sizeof(product));
++    ret = get_fru_info(product, sizeof(product), IPMI_FRU_PRODUCT_NAME_INDEX);
++    if (ret < 0) {
++        printf("No found product name from fru eeprom.\n");
++        return -1;
++    }
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++
++    return 0;
++}
++
++static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    int mac_addr_valid_flag;
++    u8 crc;
++
++    crc = calculate_crc(eeprom, IPMI_FRU_COMMON_HEADER - 1);
++    if (crc != eeprom[IPMI_FRU_COMMON_HEADER - 1]) {
++        printf("Invalid fru header crc: 0x%02x(must 0x%02x).\n", eeprom[IPMI_FRU_COMMON_HEADER - 1], crc);
++        return -1;
++    }
++
++    ret = get_dev_info_from_list_by_fru_fileid(eeprom, dev_info);
++    if (ret < 0) {
++        printf("get cardid none, use product name.\n");
++        ret = get_dev_info_from_list_by_product_name(eeprom, dev_info);
++        if (ret < 0) {
++            printf("product name get dev_info failed.\n");
++            return -1;
++        }
++    }
++
++    /* fru eeprom match product name */
++    memset((*dev_info)->syseeprom_type, 0, sizeof((*dev_info)->syseeprom_type));
++    if ((*dev_info)->fru_mac_extra_index == 1) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_B);
++    } else if ((*dev_info)->fru_mac_extra_index == 2) {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "%s", E2TYPE_SYSFRU_A);
++    } else {
++        snprintf((*dev_info)->syseeprom_type, sizeof((*dev_info)->syseeprom_type), "sysfru-%d", (*dev_info)->fru_mac_extra_index);
++    }
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr, (*dev_info)->mac_increased);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++    }
++
++    return 0;
++}
++
++static int pca9641_set_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl, reg_sts;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    ret = dm_i2c_read(dev, PCA9641_STATUS, &reg_sts, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    reg_ctl |= PCA9641_CTL_PRIORITY; /* set pca9641 priority */
++    if (BUSOFF(reg_ctl, reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to read pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        if (lock_grant(reg_ctl)) {
++            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++            ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++            if (ret < 0) {
++                ast_debug("Failed to write pca9641: 0x%02x.(busoff, lock_grant)\n", PCA9641_CONTROL);
++                return -1;
++            }
++        } else {
++            return -1;
++        }
++    } else if (lock_grant(reg_ctl)) {
++        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(lock_grant)\n", PCA9641_CONTROL);
++            return -1;
++        }
++    } else if (other_lock(reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(other_lock)\n", PCA9641_CONTROL);
++            return -1;
++        }
++        return -1;
++    }
++
++    return 0;
++}
++
++static int pca9641_detect(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    return 0;
++}
++
++static void pca9641_release_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    reg_ctl = 0;
++    ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to release pca9641: 0x%02x.\n", PCA9641_CONTROL);
++    }
++
++}
++#if 0
++static int get_product_name_match(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    char product[PRODUCT_INFO_LEN];
++
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_tlv_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if ( strcmp(product, g_dev_info_list[i].dev_name ) == 0 ) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            return 0;
++        }
++    }
++
++    return -1;
++}
++#endif
++static int pca9641_get_eeprom(struct udevice *pca9641_dev, struct udevice *e2_dev, int addr)
++{
++    int ret;
++    int i;
++
++    /* detect pca9641, if fail, return */
++    for (i = 0; i < PCA9641_DETECT_TRY_TIMES; i++) {
++        ret = pca9641_detect(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DETECT_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_DETECT_TRY_TIMES) {
++        ast_debug("Failed to detect pca9641.\n");
++        return -1;
++    }
++
++    for (i = 0; i < PCA9641_TRY_TIMES; i++) {
++        ret = pca9641_set_bus(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_TRY_TIMES) {
++        ast_debug("Failed to set pca9641 bus.\n");
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    ret = dm_i2c_read(e2_dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    pca9641_release_bus(pca9641_dev);
++
++    return 0;
++}
++
++static int normal_get_eeprom(struct udevice *dev, int addr)
++{
++    int ret;
++
++    ret = dm_i2c_read(dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        return -1;
++    }
++    return 0;
++}
++
++static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_info)
++{
++    struct udevice *bus, *e2_dev, *pca9641_dev;
++    int ret = -1;
++
++    ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
++
++    ret = uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
++    if (ret) {
++        printf("get i2c-%d adapter fail, ret : %d!! \n", tmp_eeprom_list->bus, ret);
++        return ret;
++    }
++    ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
++    if (ret) {
++        ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++            tmp_eeprom_list->bus, tmp_eeprom_list->addr, ret);
++        return -1;
++    }
++    ast_debug("get eeprom chip success\n");
++
++    if (tmp_eeprom_list->is_pca9641 == IS_PCA9641) {
++        ret = i2c_get_chip(bus, PCA9641_ADDR, 1, &pca9641_dev);
++        if (ret) {
++            ast_debug("get pca9641 chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++                tmp_eeprom_list->bus, PCA9641_ADDR, ret);
++            return -1;
++        }
++        ast_debug("get pca9641 chip success\n");
++        ret = pca9641_get_eeprom(pca9641_dev, e2_dev, tmp_eeprom_list->addr);
++    } else {
++        ret = normal_get_eeprom(e2_dev, tmp_eeprom_list->addr);
++    }
++
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom.\n");
++        return ret;
++    }
++
++    /* wedge eeprom magic */
++    if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
++        ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
++    } else if (eeprom[0] == IPMI_FRU_HDR_BYTE_ZERO) {
++        ret = get_dev_info_from_fru_eeprom(eeprom, dev_info);
++    } else {
++        ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
++    }
++
++    return ret;
++}
++
++static int save_mac_addr(dev_info_t *dev_info, char *env_mac_name)
++{
++    char mac_addr_str[PRODUCT_INFO_LEN];
++    char *p_mac_addr;
++
++    memset(mac_addr_str, 0, sizeof(mac_addr_str));
++    if (dev_info->mac_addr_valid_flag) {
++        snprintf(mac_addr_str, sizeof(mac_addr_str), "%pM", dev_info->mac_addr);
++        p_mac_addr = env_get(env_mac_name);
++        if ((p_mac_addr == NULL) || (strcmp(p_mac_addr, mac_addr_str) != 0)) {
++            env_set(env_mac_name, mac_addr_str);
++            ast_debug("Set %s to flash env...\n", env_mac_name);
++            return 1;
++        }
++    }
++    return 0;
++}
++
++static void save_product_name(dev_info_t *dev_info)
++{
++    u32 len;
++    char fit[PRODUCT_INFO_LEN];
++    char board_id_str[PRODUCT_INFO_LEN];
++    char mac_increased_str[PRODUCT_INFO_LEN];
++    char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
++    char *p_mac_increased, *p_syseeprom_type;
++    int is_save_flag;
++    int i;
++    char *debug_product;
++
++    /* ......productname . conffitname */
++    debug_product = env_get(ENV_PRODUCT_DEBUG);
++    if (debug_product != NULL && (strcmp(debug_product, ENV_PRODUCT_DEBUG_VAL) == 0)) {
++        printf("Debug mode...\n");
++        return;
++    }
++
++    if (dev_info == NULL) {
++        printf("dev_info is NULL, can't get product info.\n");
++        return;
++    }
++
++    is_save_flag = 0;
++    /* productname.. */
++    env_product = env_get(ENV_PRODUCT_NAME);
++    if (env_product == NULL || strcmp(dev_info->dev_name, env_product) != 0) {
++        env_set(ENV_PRODUCT_NAME, dev_info->dev_name);
++        env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_FLAG_VAL);
++        is_save_flag = 1;
++    } else {
++        save_flag = env_get(ENV_PRODUCT_FLAG_NAME);
++        if (strcmp(save_flag, ENV_PRODUCT_FLAG_VAL) == 0) {
++            env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_NO_FLAG_VAL);
++            is_save_flag = 1;
++        }
++    }
++
++    /* conffitname.. */
++    def_fit_name = dev_info->conffit_name;
++    memset(fit, 0, PRODUCT_INFO_LEN);
++    len = (strlen(def_fit_name) >= PRODUCT_INFO_LEN) ? (PRODUCT_INFO_LEN - 1) : strlen(def_fit_name);
++    for (i = 0; i < len; i++) {
++        if (def_fit_name[i] >= 'A' && def_fit_name[i] <= 'Z') {
++            fit[i] = def_fit_name[i] + 32;
++        } else {
++            fit[i] = def_fit_name[i];
++        }
++    }
++    fit_name = env_get(ENV_CONF_FIT_NAME);
++    if (fit_name == NULL || strcmp(fit, fit_name) != 0) {
++        env_set(ENV_CONF_FIT_NAME, fit);
++        is_save_flag = 1;
++    }
++
++    /* board_id */
++    memset(board_id_str, 0, sizeof(board_id_str));
++    snprintf(board_id_str, sizeof(board_id_str), "0x%x", dev_info->dev_type);
++    p_board_id = env_get(ENV_BOARD_ID);
++    if (p_board_id == NULL || strcmp(p_board_id, board_id_str) != 0) {
++        env_set(ENV_BOARD_ID, board_id_str);
++        is_save_flag = 1;
++    }
++
++    /* mac addr */
++    if (save_mac_addr(dev_info, ENV_MAC_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* mac0 addr */
++    if (save_mac_addr(dev_info, ENV_MAC0_ADDR)) {
++        is_save_flag = 1;
++    }
++    /* mac1 addr */
++    if (save_mac_addr(dev_info, ENV_MAC1_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* mac2 addr */
++    if (save_mac_addr(dev_info, ENV_MAC2_ADDR)) {
++        is_save_flag = 1;
++    }
++    /* mac3 addr */
++    if (save_mac_addr(dev_info, ENV_MAC3_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* eth prime */
++    env_eth_prime = env_get(ENV_ETH_PRIME);
++    if (env_eth_prime == NULL || strcmp(dev_info->eth_prime, env_eth_prime) != 0) {
++        env_set(ENV_ETH_PRIME, dev_info->eth_prime);
++        is_save_flag = 1;
++    }
++
++    /* mac_increased */
++    memset(mac_increased_str, 0, sizeof(mac_increased_str));
++    snprintf(mac_increased_str, sizeof(mac_increased_str), "%d", dev_info->mac_increased);
++    p_mac_increased = env_get(ENV_MAC_INCREASED);
++    if (p_mac_increased == NULL || strcmp(p_mac_increased, mac_increased_str) != 0) {
++        env_set(ENV_MAC_INCREASED, mac_increased_str);
++        is_save_flag = 1;
++    }
++
++    /* syseeprom_type */
++    p_syseeprom_type = env_get(ENV_SYSEEPROM_TYPE);
++    if (p_syseeprom_type == NULL) {
++        if (strlen(dev_info->syseeprom_type) == 0) {
++            env_set(ENV_SYSEEPROM_TYPE, E2TYPE_UNKNOWN);
++        } else {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++        }
++        is_save_flag = 1;
++    } else {
++        if ((strlen(dev_info->syseeprom_type) != 0) && (strcmp(dev_info->syseeprom_type, p_syseeprom_type) != 0)) {
++            env_set(ENV_SYSEEPROM_TYPE, dev_info->syseeprom_type);
++            is_save_flag = 1;
++        }
++    }
++
++    if (is_save_flag) {
++        ast_debug("save_env\n");
++        env_save();
++    }
++}
++
++void product_name_match(void)
++{
++    int i;
++    int ret = -1;
++    char *env_board_id;
++    dev_info_t *dev_info;
++    unsigned long board_id;
++
++    dev_info = NULL;
++    for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
++        ret = get_product_name(&g_eeprom_list[i], &dev_info);
++        if (ret >= 0) {
++            ast_debug("match ok, board_id: 0x%x, productname: %s, conffitname: %s\n",
++                dev_info->dev_type, dev_info->dev_name, dev_info->conffit_name);
++            break;
++        }
++    }
++
++    if (ret < 0) {
++        env_board_id = env_get(ENV_BOARD_ID);
++        if (env_board_id == NULL) {
++            printf("Failed to get product from eeprom\nSet default product: %s\n", g_dev_info_list[0].dev_name);
++            /* read board id failed, default load g_dev_info_list[0] */
++            dev_info = &g_dev_info_list[0];
++        } else { /* ENV have board ID */
++            /* board ID match dev_info */
++            board_id = simple_strtoul(env_board_id, NULL, 16);
++            printf("Get board id from env, board_id: 0x%lx\n", board_id);
++            for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++                if (g_dev_info_list[i].dev_type == board_id) {
++                    /* board id match */
++                    dev_info = &g_dev_info_list[i];
++                    break;
++                }
++            }
++        }
++    }
++
++    save_product_name(dev_info);
++    g_dev_info = dev_info;
++    return;
++}
++
++dev_info_t *get_dev_info(void)
++{
++
++    return g_dev_info;
++}
++
+diff --git a/include/platform_common_module.h b/include/platform_common_module.h
+new file mode 100644
+index 00000000..49864377
+--- /dev/null
++++ b/include/platform_common_module.h
+@@ -0,0 +1,215 @@
++#ifndef _PLATFORM_COMMON_MODULE_H
++#define _PLATFORM_COMMON_MODULE_H
++
++int env_save(void);
++void product_name_match(void);
++
++#ifdef ARRAY_SIZE
++#undef ARRAY_SIZE
++#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
++#endif
++
++#ifdef DEBUG
++#define ast_debug(fmt, args...)	printf(fmt, ##args)
++#else
++#define ast_debug(fmt, args...)
++#endif
++
++#define PRODUCT_INFO_LEN     (64)
++#define MAC_ADDR_LENGTH      (6)
++#define ETH_NAME_MAX_LEN     (32)
++
++#define IS_PCA9641      0
++#define NOT_PCA9641     1
++
++#define E2_TLV          0
++#define E2_FRU          1
++
++typedef struct eeprom_list_s {
++    int bus;
++    int addr;
++    int is_pca9641;
++    int e2_type;
++} eeprom_list_t;
++
++typedef struct dev_info_s {
++    int dev_type;                          /* product-id */
++    int tx_delay;
++    int rx_delay;
++    char eth_prime[ETH_NAME_MAX_LEN];
++    char dev_name[PRODUCT_INFO_LEN];       /* product name */
++    char conffit_name[PRODUCT_INFO_LEN];   /* dts file name*/
++    int mac_addr_valid_flag;               /* Valid MAC address indicates a valid MAC address */
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
++    int fru_mac_extra_index;
++    int mac_increased;                     /* The BMC MAC address increment of the BASE MAC address. */
++    char syseeprom_type[PRODUCT_INFO_LEN]; /* syseeprom type such as:onie-tlv, sysfru-a, sysfru-b */
++    int fix_53134_flag; /* 53134 BUG avoid */
++} dev_info_t;
++
++dev_info_t *get_dev_info(void);
++
++#define ENV_PRODUCT_NAME          "productname"
++#define ENV_BOARD_ID              "board_id"
++
++#define ENV_PRODUCT_FLAG_NAME     "productflag"
++#define ENV_CONF_FIT_NAME         "conffitname"
++
++#define ENV_PRODUCT_DEBUG         "productdebug"
++
++#define ENV_PRODUCT_FLAG_VAL      "1"
++#define ENV_PRODUCT_NO_FLAG_VAL   "0"
++
++#define ENV_PRODUCT_DEBUG_VAL     "debug"
++#define ENV_MAC_ADDR              "ethaddr"
++#define ENV_MAC0_ADDR             "eth0addr"
++#define ENV_MAC1_ADDR             "eth1addr"
++#define ENV_MAC2_ADDR             "eth2addr"
++#define ENV_MAC3_ADDR             "eth3addr"
++#define ENV_ETH_PRIME             "ethprime"
++
++#define ENV_MAC_INCREASED         "mac_increased"
++#define ENV_SYSEEPROM_TYPE        "syseeprom_type"
++#define E2TYPE_ONIE_TLV           "onie-tlv"
++#define E2TYPE_SYSFRU_A           "sysfru-a"
++#define E2TYPE_SYSFRU_B           "sysfru-b"
++#define E2TYPE_WEDGE              "wedge"
++#define E2TYPE_UNKNOWN            "unknown"
++
++#define PRODUCT_I2C_ADDR          (0x57)
++#define PRODUCT_EEPROM_LEN        (256)
++
++/**************************fru eeprom**(***************************/
++#define IPMI_FRU_HDR_BYTE_ZERO               (1)
++#define IPMI_FRU_COMMON_HEADER               (8)
++#define IPMI_FRU_PRODUCT_OFFSET              (4)
++#define IPMI_FRU_PRODUCT_NAME_INDEX          (2)
++#define IPMI_FRU_PRODUCT_FRU_FILEID_INDEX    (7)
++#define IPMI_FRU_PRODUCT_AREA_MIN_LEN        (7)
++#define IPMI_FRU_SENTINEL_VALUE              (0xC1)
++#define IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK  (0xC0)
++
++/**************************wedge eeprom*****************************/
++#define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
++#define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
++#define FBW_EEPROM_F_LOCAL_MAC_OFFSET (149)
++
++/**
++ *  The TLV Types.
++ *
++ *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
++ */
++#define TLV_CODE_PRODUCT_NAME   (0x21)
++#define TLV_CODE_PART_NUMBER    (0x22)
++#define TLV_CODE_SERIAL_NUMBER  (0x23)
++#define TLV_CODE_MAC_BASE       (0x24)
++#define TLV_CODE_MANUF_DATE     (0x25)
++#define TLV_CODE_DEVICE_VERSION (0x26)
++#define TLV_CODE_LABEL_REVISION (0x27)
++#define TLV_CODE_PLATFORM_NAME  (0x28)
++#define TLV_CODE_ONIE_VERSION   (0x29)
++#define TLV_CODE_MAC_SIZE       (0x2A)
++#define TLV_CODE_MANUF_NAME     (0x2B)
++#define TLV_CODE_MANUF_COUNTRY  (0x2C)
++#define TLV_CODE_VENDOR_NAME    (0x2D)
++#define TLV_CODE_DIAG_VERSION   (0x2E)
++#define TLV_CODE_SERVICE_TAG    (0x2F)
++#define TLV_CODE_VENDOR_EXT     (0xFD)
++#define TLV_CODE_CRC_32         (0xFE)
++
++#define TLV_CODE_EXT_NO_CMD     (0)
++#define TLV_CODE_EXT_CARD_ID    (0x1)
++
++// Header Field Constants
++#define TLV_INFO_ID_STRING      "TlvInfo"
++#define TLV_INFO_VERSION        0x01
++#define TLV_TOTAL_LEN_MAX       (XXXXXXXX - sizeof(tlvinfo_header_t))
++
++#define SCU_48                    (0x48)
++#define DELAY_MASK                (0x3F)
++#define SCU48_MAC2_TXDELAY_MASK   (6)
++#define SCU48_MAC2_RXDELAY_MASK   (18)
++#define SCU_BASE                  (0x1E6E2000)
++#define SCUA0                     (0xA0)        /* Multi-function Pin Control #7 */
++#define MAC2_BASE                 (0x1E680000)
++#define MACCR_REG                 (0x50)        /* MAC control register */
++#define GMAC_MODE_BIT             (1UL<<9)
++#define RGMII2_PIN_VALUE          (0x00FC0FC0)
++/* Put pins in RGMII mode
++ * SCUA0[6:11, 18:23]
++ * TX
++ * RMII2TXCK       GPIOT6:SCUA0[6]  = 0
++ * RMII2TXCTL      GPIOT7:SCUA0[7]  = 0
++ * RMII2TXD0       GPIOU0:SCUA0[8]  = 0
++ * RMII2TXD1       GPIOU1:SCUA0[9]  = 0
++ * RMII2TXD2       GPIOU2:SCUA0[10] = 0
++ * RMII2TXD3       GPIOU3:SCUA0[11] = 0
++ * RX
++ * RMII2RXCK       GPIOV2:SCUA0[18] = 0
++ * RMII2RXCTL      GPIOV3:SCUA0[19] = 0
++ * RMII2RXD0       GPIOV4:SCUA0[20] = 0
++ * RMII2RXD1       GPIOV5:SCUA0[21] = 0
++ * RMII2RXD2       GPIOV6:SCUA0[22] = 0
++ * RMII2RXD3       GPIOV7:SCUA0[23] = 0
++ */
++
++struct __attribute__ ((__packed__)) tlvinfo_header_s {
++    char    signature[8];   /* 0x00 - 0x07 EEPROM Tag "TlvInfo" */
++    u_int8_t      version;  /* 0x08        Structure version */
++    u_int16_t     totallen; /* 0x09 - 0x0A Length of all data which follows */
++};
++typedef struct tlvinfo_header_s tlvinfo_header_t;
++
++/*
++ * TlvInfo TLV: Layout of a TLV field
++ */
++struct __attribute__ ((__packed__)) tlvinfo_tlv_s {
++    u_int8_t  type;
++    u_int8_t  length;
++    u_int8_t  value[0];
++};
++typedef struct tlvinfo_tlv_s tlvinfo_tlv_t;
++
++typedef struct tlv_decode_value_s {
++    u_int8_t value[PRODUCT_INFO_LEN];
++    u_int32_t length;
++} tlv_decode_value_t;
++
++#ifndef BIT
++#define BIT(nr)		(1 << (nr))
++#endif
++#define PCA9641_ADDR                   (0x10)
++#define PCA9641_ID                     (0x00)
++#define PCA9641_ID_MAGIC               (0x38)
++#define PCA9641_CONTROL                (0x01)
++#define PCA9641_STATUS                 (0x02)
++#define PCA9641_TIME                   (0x03)
++#define PCA9641_CTL_LOCK_REQ           (BIT(0))
++#define PCA9641_CTL_LOCK_GRANT         (BIT(1))
++#define PCA9641_CTL_BUS_CONNECT        (BIT(2))
++#define PCA9641_CTL_BUS_INIT           (BIT(3))
++#define PCA9641_CTL_SMBUS_SWRST        (BIT(4))
++#define PCA9641_CTL_IDLE_TIMER_DIS     (BIT(5))
++#define PCA9641_CTL_SMBUS_DIS          (BIT(6))
++#define PCA9641_CTL_PRIORITY           (BIT(7))
++#define PCA9641_STS_OTHER_LOCK         (BIT(0))
++#define PCA9641_STS_BUS_INIT_FAIL      (BIT(1))
++#define PCA9641_STS_BUS_HUNG           (BIT(2))
++#define PCA9641_STS_MBOX_EMPTY         (BIT(3))
++#define PCA9641_STS_MBOX_FULL          (BIT(4))
++#define PCA9641_STS_TEST_INT           (BIT(5))
++#define PCA9641_STS_SCL_IO             (BIT(6))
++#define PCA9641_STS_SDA_IO             (BIT(7))
++
++#define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
++                       !((y) & PCA9641_STS_OTHER_LOCK))
++#define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
++#define other_lock(x)  ((x) & PCA9641_STS_OTHER_LOCK)
++
++#define PCA9641_TRY_TIMES              1000
++#define PCA9641_DELAY_TIME             2 /* ms */
++
++#define PCA9641_DETECT_TRY_TIMES       3
++#define PCA9641_DETECT_DELAY_TIME      100 /* ms */
++
++#endif/* _PLATFORM_COMMON_MODULE_H */
+\ No newline at end of file
+-- 
+2.25.1
+

@@ -1,0 +1,146 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+logger_indicate="get_baudrate"
+
+function get_bmc_baudrate()
+{
+    # get env baudrate
+    baudrate_bmc=$(stty -F /dev/ttyS4 speed 2>/dev/null)
+    logger -t ${logger_indicate} -p DEBUG "get bmc baudrate: $baudrate_bmc"
+    if [[ $baudrate_bmc == 9600 || $baudrate_bmc == 115200 ]]; then
+        echo $baudrate_bmc
+        return 0
+    else
+        echo 0
+        return -1
+    fi
+}
+
+# parm: $1- tty_dev
+# retrun: 0 - ok; -1 - fail
+function check_dev_baudrate()
+{
+    local chekc_tty=$1
+    local retry=6
+    local chk_num=0
+
+    dev_str="\"${logger_indicate}_test: ${chekc_tty}_`date`\""
+    chk_num=0
+    while [ ${retry} -gt 0 ]
+    do
+        echo "$dev_str" > /dev/${chekc_tty}
+        chk_num=$(tail -n 500 /var/log/mTerm_${chekc_tty}* | grep "$dev_str" | wc -l )
+        [ ${chk_num} -ne 0 ] && break
+        sleep 1
+        let retry--
+    done
+    if [ ${chk_num} -ne 0 ]; then
+        return 0
+    fi
+    return -1
+}
+
+function dev_baudrate_test()
+{
+    local test_tty=$1
+    local test_dev=$2
+    local test_baud=$3
+    ast_product_func_call enable_dev_serial ${test_tty}
+    if [ $? -ne 0 ]; then
+        echo "failed to enable $test_dev console"
+        return 1
+    fi
+
+    check_dev_baudrate $test_tty
+    if [ $? -eq 0 ]; then
+        logger -t ${logger_indicate} -p DEBUG "get $test_dev baudrate: ${test_baud}"
+        echo ${test_baud}
+        return 0
+    else
+        logger -t ${logger_indicate} -p DEBUG "invalid $test_dev baudrate: ${test_baud}"
+        echo "unknown baudrate"
+        return 2
+    fi
+}
+
+# parm: $1 - tty_dev
+# return 0 - ok; -1 - fail
+function get_dev_baudrate()
+{
+    dev=$1
+    declare -A BAUD_MAP
+    BAUD_MAP["9600"]="115200"
+    BAUD_MAP["115200"]="9600"
+    conf_path="/etc/device/baudrate.conf"
+    . /usr/local/bin/ast-functions
+    . ${conf_path}
+
+    tty=${DEV_TO_TTY["$dev"]}
+    if [[ "${tty}" == "" ]]; then
+        echo "$dev: unsupport"
+        return 0
+    fi
+    ast_product_func_call support_dev_serial ${tty}
+    if [ $? -ne 1 ]; then
+        echo "$dev: unsupport"
+        return 0
+    fi
+
+    current_baud=$(ps | grep "mTerm_server ${tty}" | grep -v grep | awk '{print $8}')
+    if ! [[ "${current_baud}" =~ ^[0-9]+$ ]]; then
+        echo "failed to get current baudrate"
+        return -1
+    fi
+
+    test_log=$(dev_baudrate_test ${tty} ${dev} ${current_baud})
+    test_ret=$?
+    if [ $test_ret -eq 0 ]; then
+        echo $test_log
+        return 0
+    elif [ $test_ret -eq 1 ]; then
+        echo $test_log
+        return -1
+    fi
+
+    alt_baud=${BAUD_MAP[${current_baud}]}
+    if [ -z ${alt_baud} ]; then
+        ehco "unknown current baudrate"
+        return -1
+    fi
+
+    baud_name="${tty}_baudrate"
+    current_baud_conf=${!baud_name}
+    old_baud_conf="${baud_name}=${current_baud_conf}"
+    new_baud_conf="${baud_name}=${alt_baud}"
+    logger -t ${logger_indicate} -p DEBUG "change ${old_baud_conf} to ${new_baud_conf} in ${conf_path}"
+    sed -i "/${baud_name}/c\\${new_baud_conf}" ${conf_path}
+
+    systemctl restart mTerm_$tty
+    sleep 1
+
+    test_log=$(dev_baudrate_test ${tty} ${dev} ${alt_baud})
+    test_ret=$?
+    echo $test_log
+    if [ $test_ret -eq 0 ]; then
+        return 0
+    else
+        return -1
+    fi
+}
+
+case $1 in
+    "bmc")
+        get_bmc_baudrate
+    ;;
+    "nic"*)
+        get_dev_baudrate $1
+    ;;
+    *)
+        logger -t ${logger_indicate} -p DEBUG "unknown arg: $1"
+        echo 0
+    ;;
+esac

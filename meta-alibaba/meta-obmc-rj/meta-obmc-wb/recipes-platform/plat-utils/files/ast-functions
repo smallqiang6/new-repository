@@ -1,0 +1,201 @@
+# Copyright 2014-present Facebook. All Rights Reserved.
+
+# If use /etc/device/productName file, must be after setup_platform.sh
+
+DEVMEM=/sbin/devmem
+MTD4_BACKUP_PATH="/tmp/data0_ro/fw"
+MTD10_BACKUP_PATH="/tmp/data1_ro/fw"
+DATA_MTD4_BLOCK="/dev/mtdblock4"
+DATA_MTD10_BLOCK="/dev/mtdblock10"
+DEST_DATA_PATH="/var/log/fw/"
+RESET_FILE="/tmp/reset_count"
+COPY_DIECT="."
+
+devmem_set_bit() {
+    local addr
+    local val
+    addr=$1
+    val=$($DEVMEM $addr)
+    val=$((val | (0x1 << $2)))
+    $DEVMEM $addr 32 $val
+}
+
+devmem_clear_bit() {
+    local addr
+    local val
+    addr=$1
+    val=$($DEVMEM $addr)
+    val=$((val & ~(0x1 << $2)))
+    $DEVMEM $addr 32 $val
+}
+
+#
+# Test if the given bit is set in register <addr>
+# $1 - register address
+# $2 - bit position
+#
+devmem_test_bit() {
+    local addr=$1
+    local bitpos=$2
+    local val
+
+    val=$($DEVMEM $addr)
+    val=$(((val >> $bitpos) & 0x1))
+
+    if [ $val -eq 1 ]; then
+        # 0 for true
+        return 0
+    else
+        # 1 for false
+        return 1
+    fi
+}
+
+ast_backup_to_single_data() {
+    if [ -d "$MTD4_BACKUP_PATH" ]; then
+        cp -r $1 $MTD4_BACKUP_PATH
+    fi
+
+    if [ -d "$MTD10_BACKUP_PATH" ]; then
+        cp -r $1 $MTD10_BACKUP_PATH
+    fi
+    sync
+}
+
+ast_backup_to_all_data() {
+    # backup data
+    [ -d $MTD4_BACKUP_PATH ] || mkdir -p $MTD4_BACKUP_PATH
+    [ -d $MTD10_BACKUP_PATH ] || mkdir -p $MTD10_BACKUP_PATH
+    cp -r $DEST_DATA_PATH$COPY_DIECT $MTD4_BACKUP_PATH
+    cp -r $DEST_DATA_PATH$COPY_DIECT $MTD10_BACKUP_PATH
+    # Not backup addr, because file(/var/log/fw/macupdate) sonic create
+    # If emmc be destroyed, next bmc boot slow, mac addr automatically generate
+    rm -rf /tmp/data0_ro/fw/mac
+    rm -rf /tmp/data1_ro/fw/mac
+    rm -rf /tmp/data0_ro/fw/macfile
+    rm -rf /tmp/data1_ro/fw/macfile
+    sync
+}
+
+ast_umount_mtd() {
+    cd /
+    count=1
+    while [ $count -le 3 ]; do
+        umount $DATA_MTD4_BLOCK 2>/dev/null
+        output=$(mount | grep $DATA_MTD4_BLOCK)
+        if [ -n "$output" ]; then
+            echo "umount $DATA_MTD4_BLOCK fail"
+            count=`expr $count + 1`
+            continue
+        fi
+        umount $DATA_MTD10_BLOCK 2>/dev/null
+        output=$(mount | grep $DATA_MTD10_BLOCK)
+        if [ -n "$output" ]; then
+            echo "umount $DATA_MTD10_BLOCK fail"
+            count=`expr $count + 1`
+            continue
+        fi
+        break
+    done
+}
+
+ast_mount_mtd() {
+    # mount mtd
+    data_mtd_char=$1
+    data_mtd_block=$2
+    data_mount_dir=$3
+
+    [ -d $data_mount_dir ] || mkdir -p $data_mount_dir
+    count=1
+    while [ $count -le 3 ]; do
+        mount -t jffs2 $data_mtd_block $data_mount_dir 2>/dev/null
+        # if the mount failed, format the partition and remount
+        if [ $? -ne 0 ]; then
+            echo "Mount failed; formatting $data_mtd_char and remounting."
+            busybox flash_eraseall $data_mtd_char
+            mount -t jffs2 $data_mtd_block $data_mount_dir 2>/dev/null
+        fi
+        output=$(mount | grep $data_mtd_block)
+        if [ ! -n "$output" ]; then
+            echo "mount -t jffs2  ${data_mtd_block} ${data_mount_dir} fail"
+        else
+            break
+        fi
+        count=`expr $count + 1`
+    done
+}
+
+ast_product_name=$(cat /etc/device/conffitname 2>/dev/null)
+
+if [ -f "/usr/local/bin/common/wb_sysfs_common_path.sh" ]; then
+    source "/usr/local/bin/common/wb_sysfs_common_path.sh"
+fi
+
+if [ -f "/usr/local/bin/$ast_product_name/wb_sysfs_path.sh" ]; then
+    source "/usr/local/bin/$ast_product_name/wb_sysfs_path.sh"
+fi
+
+if [ -f "/usr/local/bin/$ast_product_name/product-utils.sh" ]; then
+    source "/usr/local/bin/$ast_product_name/product-utils.sh"
+fi
+
+if [ -f "/usr/local/bin/common/product-common-utils.sh" ]; then
+    source "/usr/local/bin/common/product-common-utils.sh"
+fi
+
+ast_mtd_flash_erase(){
+    mtd=$1
+
+    busybox flash_eraseall $mtd
+    if [ $? == 0 ]; then
+        logger -p debug "erase mtd($mtd) success"
+    else
+        logger -p debug "erase mtd($mtd) failed"
+    fi
+}
+
+ast_product_func_call(){
+    result=$(product_$1 ${@:2} 2>&1)
+    ret=$?
+    err_line=$(echo $result | grep -E "(product_$1)*(command not found)" | wc -l)
+    if [ $err_line -eq 0 ]; then
+        [ -z "$result" ] || echo "$result"
+        return $ret
+    fi
+
+    result=$(product_com_$1 ${@:2} 2>&1)
+    ret=$?
+    err_line=$(echo $result | grep -E "(product_com_$1)*(command not found)" | wc -l)
+    if [ $err_line -eq 0 ]; then
+        [ -z "$result" ] || echo "$result"
+        return $ret
+    fi
+
+    logger -p debug "command product_$1 product_com_$1 not found"
+    return $ret
+}
+
+replace_reset_num()
+{
+    RESET_FILE=$1
+    reset_type=$2
+    reset_num=$3
+    if [ ! -f "/tmp/reset_count" ]; then
+        touch /tmp/reset_count
+    fi
+    old_num="$(cat ${RESET_FILE} | grep ${reset_type} | awk '{print $3}')"
+    if [[ -z $old_num ]]; then
+        echo "${reset_type} : ${reset_num}" >> ${RESET_FILE}
+    else
+        sed -i 's/'"${old_num}"'/'"${reset_num}"'/g' ${RESET_FILE}
+    fi
+}
+
+case $1 in
+    "ast_product_func_call")
+        ast_product_func_call ${@:2}
+    ;;
+    "replace_reset_num")
+        replace_reset_num ${@:2}
+    ;;
+esac

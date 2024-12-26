@@ -1,0 +1,474 @@
+From 9012ae06b34001b280ca8affe1f58a38e6af36cc Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Wed, 20 Mar 2024 15:32:49 +0800
+Subject: [PATCH 2/8] Summary:(kernel 5.15.80 first review)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202403195178
+BUGID: NA
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+---
+ arch/arm/boot/dts/aspeed-g5.dtsi           | 19 +++++++
+ drivers/i2c/busses/i2c-aspeed.c            |  1 +
+ drivers/mmc/host/sdhci-of-aspeed.c         | 36 ++++++++++++
+ drivers/pinctrl/aspeed/pinctrl-aspeed-g5.c | 28 +++++++++-
+ drivers/soc/aspeed/aspeed-lpc-snoop.c      | 65 ++++++++++++++--------
+ drivers/spi/Kconfig                        |  6 ++
+ drivers/spi/spi-bitbang-txrx.h             |  8 +++
+ drivers/watchdog/aspeed_wdt.c              |  5 +-
+ drivers/watchdog/watchdog_dev.c            |  2 +-
+ 9 files changed, 143 insertions(+), 27 deletions(-)
+
+diff --git a/arch/arm/boot/dts/aspeed-g5.dtsi b/arch/arm/boot/dts/aspeed-g5.dtsi
+index f155e9ac9..5a760eab1 100644
+--- a/arch/arm/boot/dts/aspeed-g5.dtsi
++++ b/arch/arm/boot/dts/aspeed-g5.dtsi
+@@ -30,6 +30,7 @@ aliases {
+ 		serial3 = &uart4;
+ 		serial4 = &uart5;
+ 		serial5 = &vuart;
++		spi0 = &spi_gpio;
+ 	};
+ 
+ 	cpus {
+@@ -464,12 +465,15 @@ wdt1: watchdog@1e785000 {
+ 				compatible = "aspeed,ast2500-wdt";
+ 				reg = <0x1e785000 0x20>;
+ 				clocks = <&syscon ASPEED_CLK_APB>;
++				aspeed,reset-type = "system";
+ 			};
+ 
+ 			wdt2: watchdog@1e785020 {
+ 				compatible = "aspeed,ast2500-wdt";
+ 				reg = <0x1e785020 0x20>;
+ 				clocks = <&syscon ASPEED_CLK_APB>;
++				aspeed,reset-type = "system";
++				aspeed,watchdog-enable;
+ 			};
+ 
+ 			wdt3: watchdog@1e785040 {
+@@ -588,6 +592,16 @@ mbox: mbox@200 {
+ 				};
+ 			};
+ 
++			peci: peci@1e78b000 {
++				compatible = "aspeed,ast2500-peci";
++				reg = <0x1e78b000 0x60>;
++				interrupts = <15>;
++			};
++
++			spi_gpio: spi_gpio {
++				compatible = "spi-gpio";
++			};
++
+ 			uart2: serial@1e78d000 {
+ 				compatible = "ns16550a";
+ 				reg = <0x1e78d000 0x20>;
+@@ -1493,6 +1507,11 @@ pinctrl_sda2_default: sda2_default {
+ 		groups = "SDA2";
+ 	};
+ 
++	pinctrl_sd1_8bit_default: sd1_8bit_default {
++		function = "SD1_8BIT";
++		groups = "SD1_8BIT";
++	};
++
+ 	pinctrl_sgpm_default: sgpm_default {
+ 		function = "SGPM";
+ 		groups = "SGPM";
+diff --git a/drivers/i2c/busses/i2c-aspeed.c b/drivers/i2c/busses/i2c-aspeed.c
+index 7ddbfa677..e5d00b80f 100644
+--- a/drivers/i2c/busses/i2c-aspeed.c
++++ b/drivers/i2c/busses/i2c-aspeed.c
+@@ -654,6 +654,7 @@ static int aspeed_i2c_master_xfer(struct i2c_adapter *adap,
+ 	struct aspeed_i2c_bus *bus = i2c_get_adapdata(adap);
+ 	unsigned long time_left, flags;
+ 
++	bus->msgs = NULL;
+ 	/* If bus is busy in a single master environment, attempt recovery. */
+ 	if (!bus->multi_master &&
+ 	    (readl(bus->base + ASPEED_I2C_CMD_REG) &
+diff --git a/drivers/mmc/host/sdhci-of-aspeed.c b/drivers/mmc/host/sdhci-of-aspeed.c
+index 31924f77f..a747c6ea0 100644
+--- a/drivers/mmc/host/sdhci-of-aspeed.c
++++ b/drivers/mmc/host/sdhci-of-aspeed.c
+@@ -11,6 +11,7 @@
+ #include <linux/module.h>
+ #include <linux/of_address.h>
+ #include <linux/of.h>
++#include <linux/of_gpio.h>
+ #include <linux/of_platform.h>
+ #include <linux/platform_device.h>
+ #include <linux/reset.h>
+@@ -540,6 +541,9 @@ static int aspeed_sdhci_probe(struct platform_device *pdev)
+ 	struct resource *res;
+ 	int slot;
+ 	int ret;
++	u32 reset_gpio;
++	u32 reset_on;
++	u32 reset_off;
+ 
+ 	aspeed_pdata = of_device_get_match_data(&pdev->dev);
+ 	if (!aspeed_pdata) {
+@@ -605,6 +609,38 @@ static int aspeed_sdhci_probe(struct platform_device *pdev)
+ 		goto err_pltfm_free;
+ 	}
+ 
++	if (of_property_read_u32(np, "reset_gpio", &reset_gpio)) {
++		reset_gpio = -1;
++		dev_info(&pdev->dev, "of property read reset_gpio failed.\n");
++	} else {
++		if (of_property_read_u32(np, "reset_on", &reset_on)) {
++			dev_err(&pdev->dev, "of property read reset_on failed.\n");
++			ret = -EINVAL;
++			goto err_sdhci_add;
++		}
++
++		if (of_property_read_u32(np, "reset_off", &reset_off)) {
++			dev_err(&pdev->dev, "of property read reset_off failed.\n");
++			ret = -EINVAL;
++			goto err_sdhci_add;
++		}
++
++		dev_info(&pdev->dev, "reset_gpio[%d],reset_on[%d],reset_off[%d].\n", reset_gpio, reset_on, reset_off);
++
++		if (!gpio_is_valid(reset_gpio)) {
++			dev_err(&pdev->dev, "reset_gpio[%d] invalid \n", reset_gpio);
++			ret = -EINVAL;
++			goto err_sdhci_add;
++		}
++
++		ret = gpio_request(reset_gpio, "eMMC_reset");
++		if (ret < 0) {
++			dev_err(&pdev->dev, "request GPIO[%d] error ret[%d]  \n", reset_gpio, ret);
++			goto err_sdhci_add;
++		}
++		gpio_direction_output(reset_gpio, reset_off);
++	}
++
+ 	ret = mmc_of_parse(host->mmc);
+ 	if (ret)
+ 		goto err_sdhci_add;
+diff --git a/drivers/pinctrl/aspeed/pinctrl-aspeed-g5.c b/drivers/pinctrl/aspeed/pinctrl-aspeed-g5.c
+index 4c0d26606..f506424db 100644
+--- a/drivers/pinctrl/aspeed/pinctrl-aspeed-g5.c
++++ b/drivers/pinctrl/aspeed/pinctrl-aspeed-g5.c
+@@ -54,7 +54,7 @@
+ #define SCUAC           0xAC /* Multi-function Pin Control #10 */
+ #define HW_STRAP2       0xD0 /* Strapping */
+ 
+-#define ASPEED_G5_NR_PINS 236
++#define ASPEED_G5_NR_PINS 240
+ 
+ #define COND1		{ ASPEED_IP_SCU, SCU90, BIT(6), 0, 0 }
+ #define COND2		{ ASPEED_IP_SCU, SCU94, GENMASK(1, 0), 0, 0 }
+@@ -1897,6 +1897,26 @@ FUNC_GROUP_DECL(USB11BHID, B6, A6);
+ FUNC_GROUP_DECL(USB2BD, B6, A6);
+ FUNC_GROUP_DECL(USB2BH, B6, A6);
+ 
++#define SD0_BIT8_DESC   SIG_DESC_SET(SCU90, 3)
++
++#define F20_A 236
++SIG_EXPR_LIST_DECL_SINGLE(F20_A, SD1_8BIT_D0, SD1_8BIT, SD0_BIT8_DESC);
++PIN_DECL_1(F20_A, GPIOD2DATA0, SD1_8BIT_D0);
++
++#define D20_A 237
++SIG_EXPR_LIST_DECL_SINGLE(D20_A, SD1_8BIT_D1, SD1_8BIT, SD0_BIT8_DESC);
++PIN_DECL_1(D20_A, GPIOD3DATA1, SD1_8BIT_D1);
++
++#define D21_A 238
++SIG_EXPR_LIST_DECL_SINGLE(D21_A, SD1_8BIT_D2, SD1_8BIT, SD0_BIT8_DESC);
++PIN_DECL_1(D21_A, GPIOD4DATA2, SD1_8BIT_D2);
++
++#define E20_A 239
++SIG_EXPR_LIST_DECL_SINGLE(E20_A, SD1_8BIT_D3, SD1_8BIT, SD0_BIT8_DESC);
++PIN_DECL_1(E20_A, GPIOD5DATA3, SD1_8BIT_D3);
++
++FUNC_GROUP_DECL(SD1_8BIT, F20_A, D20_A, D21_A, E20_A);
++
+ /* Pins, groups and functions are sort(1):ed alphabetically for sanity */
+ 
+ static struct pinctrl_pin_desc aspeed_g5_pins[ASPEED_G5_NR_PINS] = {
+@@ -1983,7 +2003,9 @@ static struct pinctrl_pin_desc aspeed_g5_pins[ASPEED_G5_NR_PINS] = {
+ 	ASPEED_PINCTRL_PIN(D19),
+ 	ASPEED_PINCTRL_PIN(D2),
+ 	ASPEED_PINCTRL_PIN(D20),
++	ASPEED_PINCTRL_PIN(D20_A),
+ 	ASPEED_PINCTRL_PIN(D21),
++	ASPEED_PINCTRL_PIN(D21_A),
+ 	ASPEED_PINCTRL_PIN(D22),
+ 	ASPEED_PINCTRL_PIN(D4),
+ 	ASPEED_PINCTRL_PIN(D5),
+@@ -2003,6 +2025,7 @@ static struct pinctrl_pin_desc aspeed_g5_pins[ASPEED_G5_NR_PINS] = {
+ 	ASPEED_PINCTRL_PIN(E19),
+ 	ASPEED_PINCTRL_PIN(E2),
+ 	ASPEED_PINCTRL_PIN(E20),
++	ASPEED_PINCTRL_PIN(E20_A),
+ 	ASPEED_PINCTRL_PIN(E21),
+ 	ASPEED_PINCTRL_PIN(E22),
+ 	ASPEED_PINCTRL_PIN(E3),
+@@ -2015,6 +2038,7 @@ static struct pinctrl_pin_desc aspeed_g5_pins[ASPEED_G5_NR_PINS] = {
+ 	ASPEED_PINCTRL_PIN(F19),
+ 	ASPEED_PINCTRL_PIN(F2),
+ 	ASPEED_PINCTRL_PIN(F20),
++	ASPEED_PINCTRL_PIN(F20_A),
+ 	ASPEED_PINCTRL_PIN(F21),
+ 	ASPEED_PINCTRL_PIN(F22),
+ 	ASPEED_PINCTRL_PIN(F3),
+@@ -2255,6 +2279,7 @@ static const struct aspeed_pin_group aspeed_g5_groups[] = {
+ 	ASPEED_PINCTRL_GROUP(SCL1),
+ 	ASPEED_PINCTRL_GROUP(SCL2),
+ 	ASPEED_PINCTRL_GROUP(SD1),
++	ASPEED_PINCTRL_GROUP(SD1_8BIT),
+ 	ASPEED_PINCTRL_GROUP(SD2),
+ 	ASPEED_PINCTRL_GROUP(SDA1),
+ 	ASPEED_PINCTRL_GROUP(SDA2),
+@@ -2425,6 +2450,7 @@ static const struct aspeed_pin_function aspeed_g5_functions[] = {
+ 	ASPEED_PINCTRL_FUNC(SCL1),
+ 	ASPEED_PINCTRL_FUNC(SCL2),
+ 	ASPEED_PINCTRL_FUNC(SD1),
++	ASPEED_PINCTRL_FUNC(SD1_8BIT),
+ 	ASPEED_PINCTRL_FUNC(SD2),
+ 	ASPEED_PINCTRL_FUNC(SDA1),
+ 	ASPEED_PINCTRL_FUNC(SDA2),
+diff --git a/drivers/soc/aspeed/aspeed-lpc-snoop.c b/drivers/soc/aspeed/aspeed-lpc-snoop.c
+index 344f06493..b7bb0967e 100644
+--- a/drivers/soc/aspeed/aspeed-lpc-snoop.c
++++ b/drivers/soc/aspeed/aspeed-lpc-snoop.c
+@@ -20,9 +20,7 @@
+ 
+ #define DEVICE_NAME	"aspeed-lpc-snoop"
+ 
+-static DEFINE_IDA(aspeed_lpc_snoop_ida);
+-
+-#define SNOOP_HW_CHANNEL_NUM	2
++#define SNOOP_HW_CHANNEL_NUM	3
+ #define SNOOP_FIFO_SIZE			2048
+ 
+ #define HICR5	0x80
+@@ -47,6 +45,9 @@ static DEFINE_IDA(aspeed_lpc_snoop_ida);
+ #define HICRB_ENSNP0D		BIT(14)
+ #define HICRB_ENSNP1D		BIT(15)
+ 
++#define PORT80_HEADER       (0xf5)
++#define PORT81_HEADER       (0xf6)
++
+ struct aspeed_lpc_snoop_model_data {
+ 	/*
+ 	 * The ast2400 has bits 14 and 15 as reserved, whereas the ast2500 and later
+@@ -57,7 +58,6 @@ struct aspeed_lpc_snoop_model_data {
+ };
+ 
+ struct aspeed_lpc_snoop_channel {
+-	int id;
+ 	struct miscdevice mdev;
+ 	wait_queue_head_t wq;
+ 	struct kfifo fifo;
+@@ -67,6 +67,7 @@ struct aspeed_lpc_snoop {
+ 	struct aspeed_lpc_snoop_channel chan[SNOOP_HW_CHANNEL_NUM];
+ 	struct regmap *regmap;
+ 	int irq;
++	int port_num;
+ };
+ 
+ static struct aspeed_lpc_snoop_channel *snoop_file_to_chan(struct file *file)
+@@ -153,12 +154,17 @@ static irqreturn_t aspeed_lpc_snoop_irq(int irq, void *arg)
+ 
+ 	if (reg & HICR6_STR_SNP0W) {
+ 		val = (data & SNPWDR_CH0_MASK) >> SNPWDR_CH0_SHIFT;
++
+ 		put_fifo_with_discard(&snoop->chan[0], val);
++		put_fifo_with_discard(&snoop->chan[2], val);
++		put_fifo_with_discard(&snoop->chan[2], PORT80_HEADER);
+ 	}
+-
+ 	if (reg & HICR6_STR_SNP1W) {
+ 		val = (data & SNPWDR_CH1_MASK) >> SNPWDR_CH1_SHIFT;
++
+ 		put_fifo_with_discard(&snoop->chan[1], val);
++		put_fifo_with_discard(&snoop->chan[2], val);
++		put_fifo_with_discard(&snoop->chan[2], PORT81_HEADER);
+ 	}
+ 
+ 	return IRQ_HANDLED;
+@@ -183,14 +189,10 @@ static int aspeed_lpc_enable_snoop(struct aspeed_lpc_snoop *snoop,
+ 	if (rc)
+ 		return rc;
+ 
+-	chan->id = ida_alloc(&aspeed_lpc_snoop_ida, GFP_KERNEL);
+-	if (chan->id < 0)
+-		return chan->id;
+-
+ 	chan->mdev.parent = dev;
+ 	chan->mdev.minor = MISC_DYNAMIC_MINOR;
+ 	chan->mdev.name = devm_kasprintf(dev, GFP_KERNEL, "%s%d",
+-					 DEVICE_NAME, chan->id);
++					 DEVICE_NAME, hw_channel);
+ 	chan->mdev.fops = &snoop_fops;
+ 	rc = misc_register(&chan->mdev);
+ 	if (rc)
+@@ -210,6 +212,8 @@ static int aspeed_lpc_enable_snoop(struct aspeed_lpc_snoop *snoop,
+ 		snpwadr_shift = SNPWADR_CH1_SHIFT;
+ 		hicrb_en = HICRB_ENSNP1D;
+ 		break;
++	case 2:
++        return 0;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -237,6 +241,8 @@ static void aspeed_lpc_disable_snoop(struct aspeed_lpc_snoop *snoop,
+ 				   HICR5_EN_SNP1W | HICR5_ENINT_SNP1W,
+ 				   0);
+ 		break;
++	case 2:
++		break;
+ 	default:
+ 		return;
+ 	}
+@@ -250,7 +256,7 @@ static int aspeed_lpc_snoop_probe(struct platform_device *pdev)
+ 	u32 ports[SNOOP_HW_CHANNEL_NUM], port_num;
+ 	struct aspeed_lpc_snoop *snoop;
+ 	struct device *dev;
+-	int i, rc;
++	int i, j, rc;
+ 
+ 	dev = &pdev->dev;
+ 
+@@ -281,36 +287,49 @@ static int aspeed_lpc_snoop_probe(struct platform_device *pdev)
+ 
+ 	port_num = of_property_read_variable_u32_array(dev->of_node,
+ 						       "snoop-ports",
+-						       ports, 1, SNOOP_HW_CHANNEL_NUM);
++						       ports, 1, SNOOP_HW_CHANNEL_NUM-1);
+ 	if (port_num < 0) {
+ 		dev_err(dev, "no snoop ports configured\n");
+ 		return -ENODEV;
+ 	}
+-
++    snoop->port_num = port_num;
+ 	for (i = 0; i < port_num; ++i) {
+ 		rc = aspeed_lpc_enable_snoop(snoop, dev, i, ports[i]);
+ 		if (rc)
+ 			goto err;
+ 
+-		dev_info(dev, "Initialised channel %d to snoop IO address 0x%x\n",
+-			 snoop->chan[i].id, ports[i]);
++		dev_info(dev, "Initialised channel %d/%d to snoop IO address 0x%x\n",
++			 i, port_num, ports[i]);
+ 	}
+ 
++	/* init whole channel */
++	rc = aspeed_lpc_enable_snoop(snoop, dev, 2, 0);
++	if (rc) {
++		dev_err(dev, "Initialised whole channel fail ret %d\n", rc);
++		goto err;
++	} else {
++        dev_info(dev, "Initialised whole channel success\n");
++    }
+ 	return 0;
+-
+ err:
++    for (j = (i -1); j >=0; j--) {
++        aspeed_lpc_disable_snoop(snoop, j);
++    }
+ 	return rc;
+ }
+ 
+ static int aspeed_lpc_snoop_remove(struct platform_device *pdev)
+ {
+-	struct aspeed_lpc_snoop *snoop = dev_get_drvdata(&pdev->dev);
+-	int i;
+-
+-	for (i = 0; i < SNOOP_HW_CHANNEL_NUM; ++i)
+-		aspeed_lpc_disable_snoop(snoop, i);
+-
+-	return 0;
++    struct aspeed_lpc_snoop *snoop = dev_get_drvdata(&pdev->dev);
++    int i;
++
++    /* remove whole channel */
++    aspeed_lpc_disable_snoop(snoop, 2);
++    /* remove port_num channel */
++    for (i = (snoop->port_num - 1); i >= 0; i--) {
++        aspeed_lpc_disable_snoop(snoop, i);
++    }
++    return 0;
+ }
+ 
+ static const struct aspeed_lpc_snoop_model_data ast2400_model_data = {
+diff --git a/drivers/spi/Kconfig b/drivers/spi/Kconfig
+index 86d7d2fcf..9ba913a0f 100644
+--- a/drivers/spi/Kconfig
++++ b/drivers/spi/Kconfig
+@@ -25,6 +25,12 @@ menuconfig SPI
+ 
+ if SPI
+ 
++config WB_SPI_E2_93XX46
++	bool "WB gpio spi e2 support"
++	depends on SPI
++	help
++	  Say "yes" to enable wb gpio spi e2 support.
++
+ config SPI_DEBUG
+ 	bool "Debug support for SPI drivers"
+ 	depends on DEBUG_KERNEL
+diff --git a/drivers/spi/spi-bitbang-txrx.h b/drivers/spi/spi-bitbang-txrx.h
+index ae61d72c7..ccc59ae64 100644
+--- a/drivers/spi/spi-bitbang-txrx.h
++++ b/drivers/spi/spi-bitbang-txrx.h
+@@ -49,6 +49,14 @@ bitbang_txrx_be_cpha0(struct spi_device *spi,
+ 		u32 word, u8 bits)
+ {
+ 	/* if (cpol == 0) this is SPI_MODE_0; else this is SPI_MODE_2 */
++#ifdef CONFIG_WB_SPI_E2_93XX46
++    if (bits == 16) {
++        spidelay(nsecs);    /* T(setup) */
++        setsck(spi, !cpol);
++        spidelay(nsecs);
++        setsck(spi, cpol);
++    }
++#endif
+ 
+ 	u32 oldbit = (!(word & (1<<(bits-1)))) << 31;
+ 	/* clock starts at inactive polarity */
+diff --git a/drivers/watchdog/aspeed_wdt.c b/drivers/watchdog/aspeed_wdt.c
+index a03e4ff81..2dddeae06 100644
+--- a/drivers/watchdog/aspeed_wdt.c
++++ b/drivers/watchdog/aspeed_wdt.c
+@@ -93,7 +93,7 @@ MODULE_DEVICE_TABLE(of, aspeed_wdt_of_table);
+ 
+ /* 32 bits at 1MHz, in milliseconds */
+ #define WDT_MAX_TIMEOUT_MS	4294967
+-#define WDT_DEFAULT_TIMEOUT	30
++#define WDT_DEFAULT_TIMEOUT	90
+ #define WDT_RATE_1MHZ		1000000
+ 
+ static struct aspeed_wdt *to_aspeed_wdt(struct watchdog_device *wdd)
+@@ -309,7 +309,8 @@ static int aspeed_wdt_probe(struct platform_device *pdev)
+ 	if (of_property_read_bool(np, "aspeed,alt-boot"))
+ 		wdt->ctrl |= WDT_CTRL_BOOT_SECONDARY;
+ 
+-	if (readl(wdt->base + WDT_CTRL) & WDT_CTRL_ENABLE)  {
++	if (of_property_read_bool(np, "aspeed,watchdog-enable") ||
++        (readl(wdt->base + WDT_CTRL) & WDT_CTRL_ENABLE)) {
+ 		/*
+ 		 * The watchdog is running, but invoke aspeed_wdt_start() to
+ 		 * write wdt->ctrl to WDT_CTRL to ensure the watchdog's
+diff --git a/drivers/watchdog/watchdog_dev.c b/drivers/watchdog/watchdog_dev.c
+index 3a3d8b5c7..ca5febd6d 100644
+--- a/drivers/watchdog/watchdog_dev.c
++++ b/drivers/watchdog/watchdog_dev.c
+@@ -109,7 +109,7 @@ static ktime_t watchdog_next_keepalive(struct watchdog_device *wdd)
+ 		virt_timeout = wd_data->open_deadline;
+ 
+ 	hw_heartbeat_ms = min_not_zero(timeout_ms, wdd->max_hw_heartbeat_ms);
+-	keepalive_interval = ms_to_ktime(hw_heartbeat_ms / 2);
++	keepalive_interval = ms_to_ktime(hw_heartbeat_ms / 18);
+ 
+ 	/*
+ 	 * To ensure that the watchdog times out wdd->timeout seconds
+-- 
+2.25.1
+

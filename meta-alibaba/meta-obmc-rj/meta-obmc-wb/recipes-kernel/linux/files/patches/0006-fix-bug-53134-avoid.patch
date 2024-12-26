@@ -1,0 +1,97 @@
+From 991e42893b3181ea309b66e96fc544355234b264 Mon Sep 17 00:00:00 2001
+From: wanganman <wanganman@ruijie.com.cn>
+Date: Mon, 19 Aug 2024 15:31:23 +0800
+Subject: [PATCH 6/8] (fix-bug-53134-avoid)
+
+BranchName: facebook-meta-whitebox-master
+CAFID:N202408192992
+BUGID:
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+---
+ drivers/net/ethernet/faraday/ftgmac100.c | 32 +++++++++++++++++++++++-
+ 1 file changed, 31 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 drivers/net/ethernet/faraday/ftgmac100.c
+
+diff --git a/drivers/net/ethernet/faraday/ftgmac100.c b/drivers/net/ethernet/faraday/ftgmac100.c
+old mode 100644
+new mode 100755
+index cd5b80817..3ebccf778
+--- a/drivers/net/ethernet/faraday/ftgmac100.c
++++ b/drivers/net/ethernet/faraday/ftgmac100.c
+@@ -98,6 +98,7 @@ struct ftgmac100 {
+ 	int cur_speed;
+ 	int cur_duplex;
+ 	bool use_ncsi;
++	int fix_53134_flag;
+ 
+ 	/* Multicast filter settings */
+ 	u32 maht0;
+@@ -119,6 +120,10 @@ static int ftgmac100_reset_mac(struct ftgmac100 *priv, u32 maccr)
+ 	struct net_device *netdev = priv->netdev;
+ 	int i;
+ 
++    /* XXX: fix 53134 chip bug, force GMAC_MODE bit = 1 */
++    if (priv->fix_53134_flag) {
++        maccr |= FTGMAC100_MACCR_GIGA_MODE;
++    }
+ 	/* NOTE: reset clears all registers */
+ 	iowrite32(maccr, priv->base + FTGMAC100_OFFSET_MACCR);
+ 	iowrite32(maccr | FTGMAC100_MACCR_SW_RST,
+@@ -339,13 +344,27 @@ static void ftgmac100_start_hw(struct ftgmac100 *priv)
+ 	if (priv->netdev->features & NETIF_F_HW_VLAN_CTAG_RX)
+ 		maccr |= FTGMAC100_MACCR_RM_VLAN;
+ 
++    /* XXX: fix 53134 chip bug, force GMAC_MODE bit = 1 */
++    if (priv->fix_53134_flag) {
++        maccr |= FTGMAC100_MACCR_GIGA_MODE;
++    }
++
+ 	/* Hit the HW */
+ 	iowrite32(maccr, priv->base + FTGMAC100_OFFSET_MACCR);
+ }
+ 
+ static void ftgmac100_stop_hw(struct ftgmac100 *priv)
+ {
+-	iowrite32(0, priv->base + FTGMAC100_OFFSET_MACCR);
++    u32 maccr;
++
++    /* XXX: fix 53134 chip bug, force GMAC_MODE bit = 1 */
++    if (priv->fix_53134_flag) {
++        maccr = FTGMAC100_MACCR_GIGA_MODE;
++    } else {
++        maccr = 0;
++    }
++
++    iowrite32(maccr, priv->base + FTGMAC100_OFFSET_MACCR);
+ }
+ 
+ static void ftgmac100_calc_mc_hash(struct ftgmac100 *priv)
+@@ -1630,6 +1649,11 @@ static int ftgmac100_set_features(struct net_device *netdev,
+ 			maccr |= FTGMAC100_MACCR_RM_VLAN;
+ 		else
+ 			maccr &= ~FTGMAC100_MACCR_RM_VLAN;
++
++        /* XXX: fix 53134 chip bug, force GMAC_MODE bit = 1 */
++        if (priv->fix_53134_flag) {
++            maccr |= FTGMAC100_MACCR_GIGA_MODE;
++        }
+ 		iowrite32(maccr, priv->base + FTGMAC100_OFFSET_MACCR);
+ 	}
+ 
+@@ -1873,6 +1897,12 @@ static int ftgmac100_probe(struct platform_device *pdev)
+ 		priv->txdes0_edotr_mask = BIT(15);
+ 	}
+ 
++    priv->fix_53134_flag = 0;
++
++    if (of_property_read_bool(np, "fix_53134")) {
++        priv->fix_53134_flag = 1;
++    }
++    dev_info(&pdev->dev, "priv->fix_53134_flag = %d\n", priv->fix_53134_flag);
+ 	if (np && of_get_property(np, "use-ncsi", NULL)) {
+ 		if (!IS_ENABLED(CONFIG_NET_NCSI)) {
+ 			dev_err(&pdev->dev, "NCSI stack not enabled\n");
+-- 
+2.25.1
+

@@ -1,0 +1,36 @@
+From f8d37b4c471de0f5101777faf13ca0f6d65eff4e Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Fri, 20 Dec 2024 16:54:37 +0800
+Subject: [PATCH] Summary:(ast2600 add CONFIG_ENV_ADDR)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202412207281
+BUGID: 1264283
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: I5481eb9ac19bc027e5dc1f019103ea355c2dd79f
+---
+ include/configs/wb_ast2600.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/include/configs/wb_ast2600.h b/include/configs/wb_ast2600.h
+index 38a79b5c..486606a2 100644
+--- a/include/configs/wb_ast2600.h
++++ b/include/configs/wb_ast2600.h
+@@ -22,6 +22,12 @@
+ #undef CONFIG_ENV_OFFSET
+ #define CONFIG_ENV_OFFSET		0x100000
+ 
++#undef CONFIG_SYS_ENV_BASE
++#define CONFIG_SYS_ENV_BASE		0x20000000
++
++#undef CONFIG_ENV_ADDR
++#define CONFIG_ENV_ADDR          (CONFIG_SYS_ENV_BASE + CONFIG_ENV_OFFSET)
++
+ #define CONFIG_AUTOBOOT_PROMPT		"autoboot in %d seconds (stop with 'ctrl + c' key)...\n"
+ #define CONFIG_AUTOBOOT_STOP_STR   "\x03"
+ #define CONFIG_AUTOBOOT_KEYED
+-- 
+2.25.1
+

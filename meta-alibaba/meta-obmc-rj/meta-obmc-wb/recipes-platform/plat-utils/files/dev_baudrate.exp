@@ -1,0 +1,108 @@
+#!/usr/bin/expect
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+set action [lindex $argv 0]
+set dev [lindex $argv 1]
+set username [lindex $argv 2]
+set password [lindex $argv 3]
+set timeout 5
+set cmd_shell "root@.+:.+#"
+
+proc exit_sol {code} {
+    sleep 0.5
+    send "\x0c"
+    sleep 0.5
+    send "\x78\r"
+    expect eof
+    exit $code
+}
+
+proc login_dev {username password} {
+    global cmd_shell
+    set usrchange "sudo su"
+    set input_login "login:"
+    set last_login "Last login:"
+    set input_password "Password:"
+    set switch_user "${username}@.+:.*~\\$"
+    set switch_user_flag 0
+    set retry 0
+    set retry_max 10
+
+    while {$retry < $retry_max} {
+        send "\r"
+        expect {
+            "$last_login" {}
+            -re "$input_login" {
+                send "$username\r"
+                sleep 0.5
+                send "$password\r"
+            }
+            "$input_password" {
+                send "$password\r"
+            }
+            -re "$switch_user" {
+                if {$switch_user_flag == 0} {
+                    send "$usrchange\r"
+                    set switch_user_flag 1
+                }
+            }
+            -re "$cmd_shell" {
+                send "\r"
+                break
+            }
+            timeout {
+                send "\r"
+            }
+        }
+        set retry [expr $retry + 1]
+        sleep 1
+    }
+    expect {
+        -re "$cmd_shell" {send "\r"}
+        timeout { handle_unexpect "failed to login" 2}
+    }
+}
+
+proc handle_unexpect {msg code} {
+    puts "unexpect: $msg"
+    exit_sol $code
+}
+
+proc set_baudrate {new_baud old_baud} {
+    global cmd_shell
+    send "\r"
+    expect -re "$cmd_shell" {send "fw_setenv baudrate $new_baud\r"}
+    expect -re "$cmd_shell" {send "fw_printenv baudrate\r"}
+    expect {
+        "baudrate=$new_baud" {send "\r"}
+        timeout {handle_unexpect "error env baudrate" 4}
+    }
+    expect -re "$cmd_shell" {send "sed -i 's/$old_baud/$new_baud/g' /lib/systemd/system/serial-getty@.service\r"}
+    expect -re "$cmd_shell" {send "systemctl daemon-reload\r"}
+    expect -re "$cmd_shell" {send "systemctl restart serial-getty@ttyS0.service\r"}
+}
+
+############################################################
+
+# exit code
+# 0: ok; 1: error system; 2: failed to login; 3: error argv; 4: unexpect error
+
+# login dev
+spawn /usr/local/bin/sol.sh $dev
+login_dev $username $password
+
+# set dev baudrate
+if {$action == "set"} {
+    set new_baud [lindex $argv 4]
+    set old_baud [lindex $argv 5]
+    set_baudrate $new_baud $old_baud
+} else {
+    handle_unexpect "unknown argv $action" 3
+}
+
+# exit
+puts "OK"
+exit_sol 0

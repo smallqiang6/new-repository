@@ -1,0 +1,11 @@
+[Unit]
+Description=passwd util Service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/passwd-util start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

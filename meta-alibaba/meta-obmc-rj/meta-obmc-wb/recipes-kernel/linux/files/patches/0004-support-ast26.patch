@@ -1,0 +1,152 @@
+From 6b664557a7fe907bfb31b4acb8f73f86cc062aef Mon Sep 17 00:00:00 2001
+From: zhouyongtao <zhouyongtao@ruijie.com.cn>
+Date: Tue, 26 Mar 2024 01:37:24 +0000
+Subject: [PATCH 4/8] support ast26
+
+---
+ arch/arm/boot/dts/aspeed-g6.dtsi             |  8 ++++++--
+ drivers/mtd/mtd_blkdevs.c                    |  5 +++++
+ drivers/mtd/spi-nor/controllers/aspeed-smc.c | 15 ++++++++++++++-
+ 3 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm/boot/dts/aspeed-g6.dtsi b/arch/arm/boot/dts/aspeed-g6.dtsi
+index 961200b06..3235f9766 100644
+--- a/arch/arm/boot/dts/aspeed-g6.dtsi
++++ b/arch/arm/boot/dts/aspeed-g6.dtsi
+@@ -170,6 +170,7 @@ fmc: spi@1e620000 {
+ #endif
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
++			aspeed,fmc_wdt_disable;
+ 			clocks = <&syscon ASPEED_CLK_AHB>;
+ 			status = "disabled";
+ 			interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+@@ -846,7 +847,7 @@ wdt1: watchdog@1e785000 {
+ 			wdt2: watchdog@1e785040 {
+ 				compatible = "aspeed,ast2600-wdt";
+ 				reg = <0x1e785040 0x40>;
+-				status = "disabled";
++				aspeed,watchdog-enable;
+ 			};
+ 
+ 			wdt3: watchdog@1e785080 {
+@@ -867,13 +868,14 @@ i3c: bus@1e7a0000 {
+ 				#size-cells = <1>;
+ 				ranges = <0 0x1e7a0000 0x8000>;
+ 			};
+-
++#if 0
+ 			peci: bus@1e78b000 {
+ 				compatible = "simple-bus";
+ 				#address-cells = <1>;
+ 				#size-cells = <1>;
+ 				ranges = <0x0 0x1e78b000 0x100>;
+ 			};
++#endif
+ 
+ 			vuart1: serial@1e787000 {
+ 				compatible = "aspeed,ast2600-uart";
+@@ -1336,6 +1338,7 @@ acry: acry@1e6fa000 {
+ 
+ #include "aspeed-g6-pinctrl.dtsi"
+ 
++#if 0
+ &peci {
+ 	peci0: peci-bus@0 {
+ 		compatible = "aspeed,ast2600-peci";
+@@ -1354,6 +1357,7 @@ peci0: peci-bus@0 {
+ 		status = "disabled";
+ 	};
+ };
++#endif
+ 
+ &i2c {
+ 
+diff --git a/drivers/mtd/mtd_blkdevs.c b/drivers/mtd/mtd_blkdevs.c
+index b8ae1ec14..e1e1d666e 100644
+--- a/drivers/mtd/mtd_blkdevs.c
++++ b/drivers/mtd/mtd_blkdevs.c
+@@ -188,6 +188,7 @@ static int blktrans_open(struct block_device *bdev, fmode_t mode)
+ 
+ 	kref_get(&dev->ref);
+ 
++	mutex_lock(&mtd_table_mutex);
+ 	mutex_lock(&dev->lock);
+ 
+ 	if (dev->open)
+@@ -212,6 +213,7 @@ static int blktrans_open(struct block_device *bdev, fmode_t mode)
+ unlock:
+ 	dev->open++;
+ 	mutex_unlock(&dev->lock);
++	mutex_unlock(&mtd_table_mutex);
+ 	return ret;
+ 
+ error_release:
+@@ -220,6 +222,7 @@ static int blktrans_open(struct block_device *bdev, fmode_t mode)
+ error_put:
+ 	module_put(dev->tr->owner);
+ 	mutex_unlock(&dev->lock);
++	mutex_unlock(&mtd_table_mutex);
+ 	blktrans_dev_put(dev);
+ 	return ret;
+ }
+@@ -228,6 +231,7 @@ static void blktrans_release(struct gendisk *disk, fmode_t mode)
+ {
+ 	struct mtd_blktrans_dev *dev = disk->private_data;
+ 
++	mutex_lock(&mtd_table_mutex);
+ 	mutex_lock(&dev->lock);
+ 
+ 	if (--dev->open)
+@@ -242,6 +246,7 @@ static void blktrans_release(struct gendisk *disk, fmode_t mode)
+ 	}
+ unlock:
+ 	mutex_unlock(&dev->lock);
++	mutex_unlock(&mtd_table_mutex);
+ 	blktrans_dev_put(dev);
+ }
+ 
+diff --git a/drivers/mtd/spi-nor/controllers/aspeed-smc.c b/drivers/mtd/spi-nor/controllers/aspeed-smc.c
+index 761f6fe6e..dfbe3cc46 100644
+--- a/drivers/mtd/spi-nor/controllers/aspeed-smc.c
++++ b/drivers/mtd/spi-nor/controllers/aspeed-smc.c
+@@ -289,8 +289,11 @@ struct aspeed_smc_controller {
+ /*
+  * CE Control Register
+  */
+-#define CE_CONTROL_REG			0x4
++#define CE_CONTROL_REG				0x4
++#define FMC_WDT2_STS				0x64
++#define FMC_WDT2_TIME_RELOAD_REG	0x68
+ 
++#define FMC_WDT2_DEF_TIME	0xe0
+ /*
+  * CEx Control Register
+  */
+@@ -1687,6 +1690,7 @@ static int aspeed_smc_probe(struct platform_device *pdev)
+ 	struct clk *clk;
+ 	struct resource *res;
+ 	int ret;
++	u32 wdt2_sts;
+ 
+ 	match = of_match_device(aspeed_smc_matches, &pdev->dev);
+ 	if (!match || !match->data)
+@@ -1755,6 +1759,15 @@ static int aspeed_smc_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		dev_err(dev, "Aspeed SMC probe failed %d\n", ret);
+ 
++	if (of_property_read_bool(np, "aspeed,fmc_wdt_disable")) {
++		/* disable fmc wdt2 and set timeout to default time */
++		wdt2_sts = readl(controller->regs + FMC_WDT2_STS);
++		wdt2_sts &= (~0x1);
++		writel(wdt2_sts, controller->regs + FMC_WDT2_STS);
++		writel(FMC_WDT2_DEF_TIME, controller->regs + FMC_WDT2_TIME_RELOAD_REG);
++		dev_info(dev, "Successfully disabled FMC WDT2 and set the timeout to the default time.\n");
++	}
++
+ 	return ret;
+ }
+ 
+-- 
+2.25.1
+

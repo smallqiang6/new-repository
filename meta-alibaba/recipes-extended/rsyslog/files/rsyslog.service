@@ -1,0 +1,17 @@
+[Unit]
+Description=System Logging Service
+#Requires=syslog.socket
+After=networking.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/syslog.rsyslog start
+ExecStop=/usr/local/bin/syslog.rsyslog stop
+PIDFile=/var/run/rsyslogd.pid
+StandardOutput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=rsyslogd.service
+

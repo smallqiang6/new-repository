@@ -1,0 +1,492 @@
+{
+    "DCDC_SENSORS": {
+        "BASE_53134O_V1.0_V": {
+            "Name": "BASE_53134O_V1.0_V",
+            "Descr": "BASE 53134O V1.0 Voltage"
+        },
+        "BASE_RTL8111_V3.3_V": {
+            "Name": "BASE_RTL8111_V3.3_V",
+            "Descr": "BASE RTL8111 V3.3 Voltage"
+        },
+        "BASE_CPLD3.3_V": {
+            "Name": "BASE_CPLD3.3_V",
+            "Descr": "BASE CPLD3.3 Voltage"
+        },
+        "BASE_53134O_V1.0_C": {
+            "Name": "BASE_53134O_V1.0_C",
+            "Descr": "BASE 53134O V1.0 Current"
+        },
+        "BASE_RTL8111_V3.3_C": {
+            "Name": "BASE_RTL8111_V3.3_C",
+            "Descr": "BASE RTL8111 V3.3 Current"
+        },
+        "BASE_CPLD3.3_C": {
+            "Name": "BASE_CPLD3.3_C",
+            "Descr": "BASE CPLD3.3 Current"
+        },
+        "BASE_FPGA_V1.2_V": {
+            "Name": "BASE_FPGA_V1.2_V",
+            "Descr": "BASE FPGA V1.2 Voltage"
+        },
+        "BASE_FPGA_V1.0_V": {
+            "Name": "BASE_FPGA_V1.0_V",
+            "Descr": "BASE FPGA V1.0 Voltage"
+        },
+        "BASE_OCM_V12_V": {
+            "Name": "BASE_OCM_V12_V",
+            "Descr": "BASE OCM V12 Voltage"
+        },
+        "BASE_FPGA_V1.2_C": {
+            "Name": "BASE_FPGA_V1.2_C",
+            "Descr": "BASE FPGA V1.2 Current"
+        },
+        "BASE_FPGA_V1.0_C": {
+            "Name": "BASE_FPGA_V1.0_C",
+            "Descr": "BASE FPGA V1.0 Current"
+        },
+        "BASE_OCM_V12_C": {
+            "Name": "BASE_OCM_V12_C",
+            "Descr": "BASE OCM V12 Current"
+        },
+        "BASE_FPGA_V1.8_V": {
+            "Name": "BASE_FPGA_V1.8_V",
+            "Descr": "BASE FPGA V1.8 Voltage"
+        },
+        "BASE_BMC_V3.3_V": {
+            "Name": "BASE_BMC_V3.3_V",
+            "Descr": "BASE BMC V3.3 Voltage"
+        },
+        "BASE_FPGA_V3.3_V": {
+            "Name": "BASE_FPGA_V3.3_V",
+            "Descr": "BASE FPGA V3.3 Voltage"
+        },
+        "BASE_FPGA_V1.8_C": {
+            "Name": "BASE_FPGA_V1.8_C",
+            "Descr": "BASE FPGA V1.8 Current"
+        },
+        "BASE_BMC_V3.3_C": {
+            "Name": "BASE_BMC_V3.3_C",
+            "Descr": "BASE BMC V3.3 Current"
+        },
+        "BASE_FPGA_V3.3_C": {
+            "Name": "BASE_FPGA_V3.3_C",
+            "Descr": "BASE FPGA V3.3 Current"
+        },
+        "BASE_SSD_V3.3_V": {
+            "Name": "BASE_SSD_V3.3_V",
+            "Descr": "BASE SSD V3.3 Voltage"
+        },
+        "BASE_SSD_V3.3_C": {
+            "Name": "BASE_SSD_V3.3_C",
+            "Descr": "BASE SSD V3.3 Current"
+        },
+        "RTC_V3.3_V": {
+            "Name": "RTC_V3.3_V",
+            "Descr": "RTC V3.3 Voltage"
+        },
+        "MAC_CORE_V": {
+            "Name": "MAC_CORE_V",
+            "Descr": "MAC CORE Voltage"
+        },
+        "MAC_CORE_C": {
+            "Name": "MAC_CORE_C",
+            "Descr": "MAC CORE Current"
+        },
+        "MAC_ANALOG0_V0.9_V": {
+            "Name": "MAC_ANALOG0_V0.9_V",
+            "Descr": "MAC ANALOG0 V0.9 Voltage"
+        },
+        "MAC_ANALOG0_V0.9_C": {
+            "Name": "MAC_ANALOG0_V0.9_C",
+            "Descr": "MAC ANALOG0 V0.9 Current"
+        },
+        "MAC_ANALOG0_V0.75_V": {
+            "Name": "MAC_ANALOG0_V0.75_V",
+            "Descr": "MAC ANALOG0 V0.75 Voltage"
+        },
+        "MAC_ANALOG0_V0.75_C": {
+            "Name": "MAC_ANALOG0_V0.75_C",
+            "Descr": "MAC ANALOG0 V0.75 Current"
+        },
+        "MAC_ANALOG1_V0.9_V": {
+            "Name": "MAC_ANALOG1_V0.9_V",
+            "Descr": "MAC ANALOG1 V0.9 Voltage"
+        },
+        "MAC_ANALOG1_V0.9_C": {
+            "Name": "MAC_ANALOG1_V0.9_C",
+            "Descr": "MAC ANALOG1 V0.9 Current"
+        },
+        "MAC_ANALOG1_V0.75_V": {
+            "Name": "MAC_ANALOG1_V0.75_V",
+            "Descr": "MAC ANALOG1 V0.75 Voltage"
+        },
+        "MAC_ANALOG1_V0.75_C": {
+            "Name": "MAC_ANALOG1_V0.75_C",
+            "Descr": "MAC ANALOG1 V0.75 Current"
+        },
+        "SWITCH_QSFP112G0_V3.3_V": {
+            "Name": "SWITCH_QSFP112G0_V3.3_V",
+            "Descr": "MAC QSFP112G0 V3.3 Voltage"
+        },
+        "SWITCH_QSFP112G0_V3.3_C": {
+            "Name": "SWITCH_QSFP112G0_V3.3_C",
+            "Descr": "MAC QSFP112G0 V3.3 Current"
+        },
+        "SWITCH_QSFP112G1_V3.3_V": {
+            "Name": "SWITCH_QSFP112G1_V3.3_V",
+            "Descr": "MAC QSFP112G1 V3.3 Voltage"
+        },
+        "SWITCH_QSFP112G1_V3.3_C": {
+            "Name": "SWITCH_QSFP112G1_V3.3_C",
+            "Descr": "MAC QSFP112G1 V3.3 Current"
+        },
+        "SWITCH_QSFP112G3_V3.3_V": {
+            "Name": "SWITCH_QSFP112G3_V3.3_V",
+            "Descr": "MAC QSFP112G3 V3.3 Voltage"
+        },
+        "SWITCH_QSFP112G3_V3.3_C": {
+            "Name": "SWITCH_QSFP112G3_V3.3_C",
+            "Descr": "MAC QSFP112G3 V3.3 Current"
+        },
+        "SWITCH_QSFP112G4_V3.3_V": {
+            "Name": "SWITCH_QSFP112G4_V3.3_V",
+            "Descr": "MAC QSFP112G4 V3.3 Voltage"
+        },
+        "SWITCH_QSFP112G4_V3.3_C": {
+            "Name": "SWITCH_QSFP112G4_V3.3_C",
+            "Descr": "MAC QSFP112G4 V3.3 Current"
+        },
+        "SWITCH_STBY_V3.3_V": {
+            "Name": "SWITCH_STBY_V3.3_V",
+            "Descr": "SWITCH STBY V3.3 Voltage"
+        },
+        "SWITCH_CONVERT_V1.2_V": {
+            "Name": "SWITCH_CONVERT_V1.2_V",
+            "Descr": "SWITCH CONVERT V1.2 Voltage"
+        },
+        "SWITCH_STBY_V3.3_C": {
+            "Name": "SWITCH_STBY_V3.3_C",
+            "Descr": "SWITCH STBY V3.3 Current"
+        },
+        "SWITCH_CONVERT_V1.2_C": {
+            "Name": "SWITCH_CONVERT_V1.2_C",
+            "Descr": "SWITCH CONVERT V1.2 Current"
+        },
+        "PCIEBOARD_CPLD_V3.3_V": {
+            "Name": "PCIEBOARD_CPLD_V3.3_V",
+            "Descr": "PCIEBOARD CPLD V3.3 Voltage"
+        },
+        "SWITCH_STBY_V1.8_V": {
+            "Name": "SWITCH_STBY_V1.8_V",
+            "Descr": "SWITCH STBY V1.8 Voltage"
+        },
+        "SWITCH_CPLD_V3.3V_V": {
+            "Name": "SWITCH_CPLD_V3.3V_V",
+            "Descr": "SWITCH CPLD V3.3 Voltage"
+        },
+        "PCIEBOARD_CPLD_V3.3_C": {
+            "Name": "PCIEBOARD_CPLD_V3.3_C",
+            "Descr": "PCIEBOARD CPLD V3.3 Current"
+        },
+        "SWITCH_STBY_V1.8_C": {
+            "Name": "SWITCH_STBY_V1.8_C",
+            "Descr": "SWITCH STBY V1.8 Current"
+        },
+        "SWITCH_CPLD_V3.3V_C": {
+            "Name": "SWITCH_CPLD_V3.3V_C",
+            "Descr": "SWITCH CPLD V3.3 Current"
+        },
+        "SWITCH_V5.0_V": {
+            "Name": "SWITCH_V5.0_V",
+            "Descr": "SWITCH V5.0 Voltage"
+        },
+        "MAC_MDIO1.2_V": {
+            "Name": "MAC_MDIO1.2_V",
+            "Descr": "MAC MDIO V1.2 Voltage"
+        },
+        "MAC_V0.8V_V": {
+            "Name": "MAC_V0.8V_V",
+            "Descr": "MAC V0.8 Voltage"
+        },
+        "SWITCH_V5.0_C": {
+            "Name": "SWITCH_V5.0_C",
+            "Descr": "SWITCH V5.0 Current"
+        },
+        "MAC_MDIO1.2_C": {
+            "Name": "MAC_MDIO1.2_C",
+            "Descr": "MAC MDIO V1.2 Current"
+        },
+        "MAC_V0.8V_C": {
+            "Name": "MAC_V0.8V_C",
+            "Descr": "MAC V0.8 Current"
+        },
+        "MAC_PLL0_V0.9_V": {
+            "Name": "MAC_PLL0_V0.9_V",
+            "Descr": "MAC PLL0 V0.9 Voltage"
+        },
+        "SWITCH_CLK_V1.8_V": {
+            "Name": "SWITCH_CLK_V1.8_V",
+            "Descr": "SWITCH CLK V1.8 Voltage"
+        },
+        "SWITCH_CLK_V3.3_V": {
+            "Name": "SWITCH_CLK_V3.3_V",
+            "Descr": "SWITCH CLK V3.3 Voltage"
+        },
+        "MAC_PLL0_V0.9_C": {
+            "Name": "MAC_PLL0_V0.9_C",
+            "Descr": "MAC PLL0 V0.9 Current"
+        },
+        "SWITCH_CLK_V1.8_C": {
+            "Name": "SWITCH_CLK_V1.8_C",
+            "Descr": "SWITCH CLK V1.8 Current"
+        },
+        "SWITCH_CLK_V3.3_C": {
+            "Name": "SWITCH_CLK_V3.3_C",
+            "Descr": "SWITCH CLK V3.3 Current"
+        },
+        "MAC_V1.8_V": {
+            "Name": "MAC_V1.8_V",
+            "Descr": "MAC V1.8 Voltage"
+        },
+        "MAC_V1.5_V": {
+            "Name": "MAC_V1.5_V",
+            "Descr": "MAC V1.5 Voltage"
+        },
+        "MAC_PLL1_V0.9_V": {
+            "Name": "MAC_PLL1_V0.9_V",
+            "Descr": "MAC PLL1 V0.9 Voltage"
+        },
+        "MAC_V1.8_C": {
+            "Name": "MAC_V1.8_C",
+            "Descr": "MAC V1.8 Current"
+        },
+        "MAC_V1.5_C": {
+            "Name": "MAC_V1.5_C",
+            "Descr": "MAC V1.5 Current"
+        },
+        "MAC_PLL1_V0.9_C": {
+            "Name": "MAC_PLL1_V0.9_C",
+            "Descr": "MAC PLL1 V0.9 Current"
+        },
+        "MAC_PLL2_V0.9_V": {
+            "Name": "MAC_PLL2_V0.9_V",
+            "Descr": "MAC PLL2 V0.9 Voltage"
+        },
+        "MAC_PLL3_V0.9_V": {
+            "Name": "MAC_PLL3_V0.9_V",
+            "Descr": "MAC PLL3 V0.9 Voltage"
+        },
+        "MAC_PLL2_V0.9_C": {
+            "Name": "MAC_PLL2_V0.9_C",
+            "Descr": "MAC PLL2 V0.9 Current"
+        },
+        "MAC_PLL3_V0.9_C": {
+            "Name": "MAC_PLL3_V0.9_C",
+            "Descr": "MAC PLL3 V0.9_C Current"
+        },
+        "LC_CPLD_V3.3V_V": {
+            "Name": "LC_CPLD_V3.3V_V",
+            "Descr": "LC CPLD V3.3 Voltage"
+        },
+        "LC_PHY_V1.0_V": {
+            "Name": "LC_PHY_V1.0_V",
+            "Descr": "LC PHY V1.0 Voltage"
+        },
+        "LC_V3.3_V": {
+            "Name": "LC_V3.3_V",
+            "Descr": "LC V3.3 Voltage"
+        },
+        "LC_CPLD_V3.3V_C": {
+            "Name": "LC_CPLD_V3.3V_C",
+            "Descr": "LC CPLD V3.3 Current"
+        },
+        "LC_PHY_V1.0_C": {
+            "Name": "LC_PHY_V1.0_C",
+            "Descr": "LC PHY V1.0 Current"
+        },
+        "LC_V3.3_C": {
+            "Name": "LC_V3.3_C",
+            "Descr": "LC V3.3 Current"
+        },
+        "LC_V5.0_V": {
+            "Name": "LC_V5.0_V",
+            "Descr": "LC V5.0 Voltage"
+        },
+        "LC_V5.0_C": {
+            "Name": "LC_V5.0_C",
+            "Descr": "LC V5.0 Current"
+        },
+        "LC_QSFP112G0_V3.3_V": {
+            "Name": "LC_QSFP112G0_V3.3_V",
+            "Descr": "LC QSFP112G0 V3.3 Voltage"
+        },
+        "LC_QSFP112G0_V3.3_C": {
+            "Name": "LC_QSFP112G0 V3.3_C",
+            "Descr": "LC QSFP112G0 V3.3 Current"
+        },
+        "LC_QSFP112G1_V3.3_V": {
+            "Name": "LC_QSFP112G1_V3.3_V",
+            "Descr": "LC QSFP112G1 V3.3 Voltage"
+        },
+        "LC_QSFP112G1_V3.3_C": {
+            "Name": "LC_QSFP112G1 V3.3_C",
+            "Descr": "LC QSFP112G1 V3.3 Current"
+        },
+        "OCM_P1V05_V": {
+            "Name": "OCM_P1V05_V",
+            "Descr": "OCM P1V05 Voltage"
+        },
+        "OCM_VCCIN_V": {
+            "Name": "OCM_VCCIN_V",
+            "Descr": "OCM VCCIN Voltage"
+        },
+        "OCM_P1V2_VDDQ_V": {
+            "Name": "OCM_P1V2_VDDQ_V",
+            "Descr": "OCM P1V2 VDDQ Voltage"
+        },
+        "OCM_P1V8_V": {
+            "Name": "OCM_P1V8_V",
+            "Descr": "OCM P1V8 Voltage"
+        },
+        "OCM_P0V6_VTT_V": {
+            "Name": "OCM_P0V6_VTT_V",
+            "Descr": "OCM P0V6 VTT Voltage"
+        },
+        "OCM_VNN_PCH_V": {
+            "Name": "OCM_VNN_PCH_V",
+            "Descr": "OCM VNN PCH Voltage"
+        },
+        "OCM_VNN_NAC_V": {
+            "Name": "OCM_VNN_NAC_V",
+            "Descr": "OCM VNN NAC Voltage"
+        },
+        "OCM_P2V5_VPP_V": {
+            "Name": "OCM_P2V5_VPP_V",
+            "Descr": "OCM P2V5 VPP Voltage"
+        },
+        "OCM_VCC_ANA_V": {
+            "Name": "OCM_VCC_ANA_V",
+            "Descr": "OCM VCC ANA Voltage"
+        },
+        "OCM_P3V3_STBY_V": {
+            "Name": "OCM_P3V3_STBY_V",
+            "Descr": "OCM P3V3 STBY Voltage"
+        },
+        "OCM_P5V_AUX_V": {
+            "Name": "OCM_P5V_AUX_V",
+            "Descr": "OCM P5V AUX Voltage"
+        },
+        "OCM_P1V8_AUX_V": {
+            "Name": "OCM_P1V8_AUX_V",
+            "Descr": "OCM P1V8 AUX Voltage"
+        },
+        "OCM_P3V3_AUX_V": {
+            "Name": "OCM_P3V3_AUX_V",
+            "Descr": "OCM P3V3 AUX Voltage"
+        },
+        "OCM_V1P80_EMMC_V": {
+            "Name": "OCM_V1P80_EMMC_V",
+            "Descr": "OCM V1P80 EMMC Voltage"
+        },
+        "OCM_V3P3_EMMC_V": {
+            "Name": "OCM_V3P3_EMMC_V",
+            "Descr": "OCM V3P3 EMMC Voltage"
+        },
+        "OCM_XDPE_VCCIN_V": {
+            "Name": "OCM_XDPE_VCCIN_V",
+            "Descr": "OCM XDPE VCCIN Voltage"
+        },
+        "OCM_XDPE_P1V8_V": {
+            "Name": "OCM_XDPE_P1V8_V",
+            "Descr": "OCM XDPE P1V8 Voltage"
+        },
+        "OCM_XDPE_VCCIN_C": {
+            "Name": "OCM_XDPE_VCCIN_C",
+            "Descr": "OCM XDPE VCCIN Current"
+        },
+        "OCM_XDPE_P1V8_C": {
+            "Name": "OCM_XDPE_P1V8_C",
+            "Descr": "OCM XDPE P1V8 Current"
+        },
+        "OCM_XDPE_P1V05_V": {
+            "Name": "OCM_XDPE_P1V05_V",
+            "Descr": "OCM XDPE P1V05 Voltage"
+        },
+        "OCM_XDPE_VNN_PCH_V": {
+            "Name": "OCM_XDPE_VNN_PCH_V",
+            "Descr": "OCM XDPE VNN PCH Voltage"
+        },
+        "OCM_XDPE_P1V05_C": {
+            "Name": "OCM_XDPE_P1V05_C",
+            "Descr": "OCM XDPE P1V05 Current"
+        },
+        "OCM_XDPE_VNN_PCH_C": {
+            "Name": "OCM_XDPE_VNN_PCH_C",
+            "Descr": "OCM XDPE VNN PCH Current"
+        },
+        "OCM_XDPE_VNN_NAC_V": {
+            "Name": "OCM_XDPE_VNN_NAC_V",
+            "Descr": "OCM XDPE VNN NAC Voltage"
+        },
+        "OCM_XDPE_VCC_ANA_V": {
+            "Name": "OCM_XDPE_VCC_ANA_V",
+            "Descr": "OCM XDPE VCC ANA Voltage"
+        },
+        "OCM_XDPE_VNN_NAC_C": {
+            "Name": "OCM_XDPE_VNN_NAC_C",
+            "Descr": "OCM XDPE VNN NAC Current"
+        },
+        "OCM_XDPE_VCC_ANA_C": {
+            "Name": "OCM_XDPE_VCC_ANA_C",
+            "Descr": "OCM XDPE VCC ANA Current"
+        },
+        "OCM_XDPE_P1V2_VDDQ_V": {
+            "Name": "OCM_XDPE_P1V2_VDDQ_V",
+            "Descr": "OCM XDPE P1V2 VDDQ Voltage"
+        },
+        "OCM_XDPE_P1V2_VDDQ_C": {
+            "Name": "OCM_XDPE_P1V2_VDDQ_C",
+            "Descr": "OCM XDPE P1V2 VDDQ Current"
+        }
+    },
+    "TEMPERATURE_SENSORS": {
+        "Cpu": "CPU_TEMP",
+        "Inlet": "INLET_TEMP",
+        "Switch": "SWITCH_TEMP",
+        "Nic": "NIC_TEMP"
+    },
+    "EVST_SENSORS": {
+        "APLL_EVENT": {
+            "Descr": "PLL lock history",
+            "Default": "0",
+            "Decoder": {
+                "0": "Never",
+                "1": "Locked to Unlocked",
+                "2": "Unlocked to Locked",
+                "3": "Unlocked to Locked or Locked to Unlocked"
+            },
+            "RW": "RW",
+            "Expects": ["0"]
+        },
+        "APLL_STS": {
+            "Descr": "PLL lock status",
+            "Default": "0",
+            "Decoder": {
+                "0": "Unlocked",
+                "1": "Locked"
+            },
+            "RW": "RO",
+            "Expects": ["1"]
+        },
+        "APLL_LOL_EVENT": {
+            "Descr": "PLL lock de-assert count",
+            "Default": "0",
+            "Decoder": {
+                "0": "Never",
+                "1": "Lock de-asserts"
+            },
+            "RW": "RW",
+            "Expects": ["0"]
+        }
+    }
+}

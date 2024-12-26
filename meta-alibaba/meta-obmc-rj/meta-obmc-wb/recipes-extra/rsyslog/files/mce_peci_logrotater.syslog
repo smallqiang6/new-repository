@@ -1,0 +1,15 @@
+# /etc/logrotate.d/rsyslog
+# Close handle after each collection
+# If listen a signal to reopen file, so don't need to kill HUP to cpu-error-gpio
+
+/var/log/mce/info.log
+/var/log/mce/peci_info.log
+{
+        rotate 9
+        missingok
+        notifempty
+        size 20M
+        delaycompress
+        compress
+        sharedscripts
+}

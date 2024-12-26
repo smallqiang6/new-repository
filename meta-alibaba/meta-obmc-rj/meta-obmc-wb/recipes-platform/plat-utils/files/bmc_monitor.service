@@ -1,0 +1,10 @@
+[Unit]
+Description=Monitor host watchdog service
+After=init-platform.service
+
+[Service]
+ExecStart=/usr/local/bin/bmc_monitor.sh
+Restart=always
+
+[Install]
+WantedBy=sonic.target

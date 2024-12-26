@@ -1,0 +1,175 @@
+From 8bd4758a5fc0c92913cecb9b038e89c2013ab8ee Mon Sep 17 00:00:00 2001
+From: wanganman <wanganman@ruijie.com.cn>
+Date: Tue, 26 Nov 2024 11:02:30 +0800
+Subject: [PATCH] get-mac-addr-conformity-and-set-spi-width-single
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202411265705
+BUGID:
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+---
+ arch/arm/dts/wb_ast2600.dts          | 12 +++---
+ drivers/ssp/platform_common_module.c | 61 ++++++++--------------------
+ 2 files changed, 23 insertions(+), 50 deletions(-)
+
+diff --git a/arch/arm/dts/wb_ast2600.dts b/arch/arm/dts/wb_ast2600.dts
+index c3f1b185..a5faaf89 100644
+--- a/arch/arm/dts/wb_ast2600.dts
++++ b/arch/arm/dts/wb_ast2600.dts
+@@ -117,24 +117,24 @@
+ 		compatible = "spi-flash", "sst,w25q256";
+ 		status = "okay";
+ 		spi-max-frequency = <50000000>;
+-		spi-tx-bus-width = <4>;
+-		spi-rx-bus-width = <4>;
++		spi-tx-bus-width = <1>;
++		spi-rx-bus-width = <1>;
+ 	};
+ 
+ 	flash@1 {
+ 		compatible = "spi-flash", "sst,w25q256";
+ 		status = "okay";
+ 		spi-max-frequency = <50000000>;
+-		spi-tx-bus-width = <4>;
+-		spi-rx-bus-width = <4>;
++		spi-tx-bus-width = <1>;
++		spi-rx-bus-width = <1>;
+ 	};
+ 
+ 	flash@2 {
+ 		compatible = "spi-flash", "sst,w25q256";
+ 		status = "okay";
+ 		spi-max-frequency = <50000000>;
+-		spi-tx-bus-width = <4>;
+-		spi-rx-bus-width = <4>;
++		spi-tx-bus-width = <1>;
++		spi-rx-bus-width = <1>;
+ 	};
+ };
+ 
+diff --git a/drivers/ssp/platform_common_module.c b/drivers/ssp/platform_common_module.c
+index 0b4449f1..750c5914 100755
+--- a/drivers/ssp/platform_common_module.c
++++ b/drivers/ssp/platform_common_module.c
+@@ -7,8 +7,8 @@
+ #include <platform_common_module.h>
+ #include <configs/product_info.h>
+ 
+-u8 eeprom[PRODUCT_EEPROM_LEN];
+ 
++u8 eeprom[PRODUCT_EEPROM_LEN];
+ typedef struct product_map_s {
+     char productname[PRODUCT_INFO_LEN];
+     char fitname[PRODUCT_INFO_LEN];
+@@ -433,41 +433,6 @@ static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t
+     return 0;
+ }
+ 
+-static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
+-{
+-    int offset;
+-    int i;
+-    u32 len;
+-
+-    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
+-    /* skip Product Area Format Version, Product Area Length and Language Code */
+-    offset += 3;
+-    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
+-        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
+-            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-                fru_mac_extra_index);
+-            return -1;
+-        }
+-
+-        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+-        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
+-            if (len != MAC_ADDR_LENGTH) {
+-                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
+-                    len, fru_mac_extra_index);
+-                return -1;
+-            }
+-            memcpy(buf, &(eeprom[offset + 1]), size);
+-            return 0;
+-        }
+-        offset += 1;
+-        offset += len;
+-    }
+-
+-    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
+-        fru_mac_extra_index);
+-    return -1;
+-}
+-
+ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+ {
+     int ret;
+@@ -574,7 +539,7 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+     return 0;
+ }
+ 
+-static int get_fru_info(char *fru_info, int fru_len, int fru_offset)
++static int get_fru_info(char *fru_info, int fru_len, int fru_offset, bool fru_len_check)
+ {
+     int offset;
+     u32 len;
+@@ -597,9 +562,16 @@ static int get_fru_info(char *fru_info, int fru_len, int fru_offset)
+ 
+         len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
+         if ((i + 1) == fru_offset) {
+-            if (len >= fru_len) {
+-                printf("Error: length: %d\n", len);
+-                len = fru_len - 1;
++            if (fru_len_check == true) {
++                if (len != fru_len) {
++                    printf("Error: length: %d, fru_len: %d, fru_len_check: %d\n", len, fru_len, fru_len_check);
++                    return -1;
++                }
++            } else {
++                if (len >= fru_len) {
++                    printf("Error: length: %d, fru_len: %d, fru_len_check: %d\n", len, fru_len, fru_len_check);
++                    len = fru_len - 1;
++                }
+             }
+             memcpy((void *)fru_info, &(eeprom[offset + 1]), len);
+             return 0;
+@@ -620,7 +592,7 @@ static int get_dev_info_from_list_by_fru_fileid(u_int8_t *eeprom, dev_info_t **d
+     char cardid[PRODUCT_INFO_LEN];
+ 
+     memset(cardid, 0, sizeof(cardid));
+-    ret = get_fru_info(cardid, sizeof(cardid), IPMI_FRU_PRODUCT_FRU_FILEID_INDEX);
++    ret = get_fru_info(cardid, sizeof(cardid), IPMI_FRU_PRODUCT_FRU_FILEID_INDEX, false);
+     if (ret < 0) {
+         printf("No found cardid from fru eeprom.\n");
+         return -1;
+@@ -649,7 +621,7 @@ static int get_dev_info_from_list_by_product_name(u_int8_t *eeprom, dev_info_t *
+     char product[PRODUCT_INFO_LEN];  
+ 
+     memset(product, 0, sizeof(product));
+-    ret = get_fru_info(product, sizeof(product), IPMI_FRU_PRODUCT_NAME_INDEX);
++    ret = get_fru_info(product, sizeof(product), IPMI_FRU_PRODUCT_NAME_INDEX, false);
+     if (ret < 0) {
+         printf("No found product name from fru eeprom.\n");
+         return -1;
+@@ -672,7 +644,7 @@ static int get_dev_info_from_list_by_product_name(u_int8_t *eeprom, dev_info_t *
+ 
+ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+ {
+-    int ret;
++    int ret, mac_length;
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];
+     int mac_addr_valid_flag;
+     u8 crc;
+@@ -705,7 +677,8 @@ static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+ 
+     /* get MAC addr */
+     memset(mac_addr, 0, sizeof(mac_addr));
+-    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
++    mac_length = IPMI_FRU_PRODUCT_AREA_MIN_LEN + ((*dev_info)->fru_mac_extra_index);
++    ret = get_fru_info((char *)mac_addr, sizeof(mac_addr), mac_length, true);
+     if (ret < 0) {
+         ast_debug("Failed to read mac address\n");
+         mac_addr_valid_flag = 0;
+-- 
+2.25.1
+

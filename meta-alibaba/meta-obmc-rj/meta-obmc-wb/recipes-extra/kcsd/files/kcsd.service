@@ -1,0 +1,11 @@
+[Unit]
+Description=System KCSD Service
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/kcsd.sh start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+

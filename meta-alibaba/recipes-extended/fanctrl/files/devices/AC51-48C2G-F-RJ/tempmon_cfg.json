@@ -1,0 +1,20 @@
+{
+    "SWITCH": {
+        "Enabled": false,
+        "MinorAlarm": 100.9,
+        "MajorAlarm": 103.9,
+        "FailureConfirmTime": 15
+    },
+    "CPU": {
+        "MinorAlarm": 100.9,
+        "MajorAlarm": 103.9,
+        "FailureConfirmTime": 15
+    },
+    "INLET": {
+        "MinorAlarm": 50.9,
+        "MajorAlarm": 53.9,
+        "FailureConfirmTime": 15
+    },
+    "RUN_CYCLE": 5,
+    "RECOVER_TIME": 300
+}

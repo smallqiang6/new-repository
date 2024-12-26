@@ -1,0 +1,30 @@
+#!/bin/bash
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+
+#检查本身进程是否已经正在执行中
+function check(){
+    count=`ps |grep $0 |grep -v "grep" |wc -l`
+    #echo $count
+    if [ 2 != $count ];then
+        logger -t INITSERVICE -p DEBUG "$0 is running"
+        exit 0
+    fi
+}
+
+check
+echo "rem_device_all" > /proc/net/pktgen/kpktgend_0
+echo "add_device eth0" > /proc/net/pktgen/kpktgend_0
+echo "pkt_size 64" > /proc/net/pktgen/eth0
+echo "count $2" > /proc/net/pktgen/eth0
+echo "dst_mac ff:ff:ff:ff:ff:ff:ff:ff" > /proc/net/pktgen/eth0
+echo "delay 0" > /proc/net/pktgen/eth0
+
+echo "start" > /proc/net/pktgen/pgctrl
+ifconfig eth0 |grep -E "TX packets|RX packets"
+echo "rem_device_all" > /proc/net/pktgen/kpktgend_0
+
+#在设置100M采用此方式发包，需要reset pyh，才能恢复网络，否则操作网络异常情况
+echo 0x8000 > /sys/bus/mdio_bus/devices/ftgmac100_mii:18/hw_test00

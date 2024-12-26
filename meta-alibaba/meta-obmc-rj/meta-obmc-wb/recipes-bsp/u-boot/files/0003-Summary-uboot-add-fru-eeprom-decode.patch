@@ -1,0 +1,752 @@
+From 1f0525a8818279fc954961bfa758e2f1d6a92dd4 Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Tue, 16 Apr 2024 11:13:57 +0800
+Subject: [PATCH 3/9] Summary:(uboot add fru eeprom decode)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202404169699
+BUGID: NA
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: I3d741203b30d3bfba6e52d8b8955b37e4c5d8c53
+---
+ board/wb-obmc/ast/ast-common.h |   1 +
+ board/wb-obmc/ast/ast-g5.c     | 258 +++++++++++++++++++++++++--------
+ board/wb-obmc/ast/ast-g6.c     | 248 ++++++++++++++++++++++++-------
+ 3 files changed, 392 insertions(+), 115 deletions(-)
+
+diff --git a/board/wb-obmc/ast/ast-common.h b/board/wb-obmc/ast/ast-common.h
+index 3c4f3186..93a0975b 100644
+--- a/board/wb-obmc/ast/ast-common.h
++++ b/board/wb-obmc/ast/ast-common.h
+@@ -35,6 +35,7 @@ typedef struct dev_info_s {
+     char conffit_name[PRODUCT_INFO_LEN];   /* dts file name*/
+     int mac_addr_valid_flag;               /* Valid MAC address indicates a valid MAC address */
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
++    int fru_mac_extra_index;
+ } dev_info_t;
+ 
+ #endif/* _AST_COMMON_H */
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+index dd87e83b..674bb13e 100644
+--- a/board/wb-obmc/ast/ast-g5.c
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -26,6 +26,11 @@
+ 
+ int env_save(void);
+ 
++#ifdef ARRAY_SIZE
++#undef ARRAY_SIZE
++#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
++#endif
++
+ #ifdef DEBUG
+ #define ast_debug(fmt, args...)	printf(fmt, ##args)
+ #else
+@@ -36,13 +41,13 @@ DECLARE_GLOBAL_DATA_PTR;
+ 
+ #ifdef CONFIG_BOARD_LATE_INIT
+ 
+-#define ENV_PRODUCT_NAME       "productname"
+-#define ENV_BOARD_ID           "board_id"
++#define ENV_PRODUCT_NAME          "productname"
++#define ENV_BOARD_ID              "board_id"
+ 
+-#define ENV_PRODUCT_FLAG_NAME  "productflag"
+-#define ENV_CONF_FIT_NAME      "conffitname"
++#define ENV_PRODUCT_FLAG_NAME     "productflag"
++#define ENV_CONF_FIT_NAME         "conffitname"
+ 
+-#define ENV_PRODUCT_DEBUG      "productdebug"
++#define ENV_PRODUCT_DEBUG         "productdebug"
+ 
+ #define ENV_PRODUCT_FLAG_VAL      "1"
+ #define ENV_PRODUCT_NO_FLAG_VAL   "0"
+@@ -53,14 +58,23 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define ENV_MAC1_ADDR             "eth1addr"
+ #define ENV_ETH_PRIME             "ethprime"
+ 
+-#define PRODUCT_I2C_ADDR     (0x57)
+-#define PRODUCT_EEPROM_LEN   (256)
++#define PRODUCT_I2C_ADDR          (0x57)
++#define PRODUCT_EEPROM_LEN        (256)
++
++#define SCU_BASE                  (0x1E6E2000)
++#define SCU_48                    (0x48)
++#define DELAY_MASK                (0x3F)
++#define SCU48_MAC2_TXDELAY_MASK   (6)
++#define SCU48_MAC2_RXDELAY_MASK   (18)
+ 
+-#define SCU_BASE                0x1E6E2000
+-#define SCU_48                  0x48
+-#define DELAY_MASK              0x3F
+-#define SCU48_MAC2_TXDELAY_MASK 6
+-#define SCU48_MAC2_RXDELAY_MASK 18
++/**************************fru eeprom**(***************************/
++#define IPMI_FRU_HDR_BYTE_ZERO               (1)
++#define IPMI_FRU_COMMON_HEADER               (8)
++#define IPMI_FRU_PRODUCT_OFFSET              (4)
++#define IPMI_FRU_PRODUCT_NAME_INDEX          (2)
++#define IPMI_FRU_PRODUCT_AREA_MIN_LEN        (7)
++#define IPMI_FRU_SENTINEL_VALUE              (0xC1)
++#define IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK  (0xC0)
+ 
+ /**************************wedge eeprom*****************************/
+ #define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
+@@ -74,26 +88,26 @@ static dev_info_t *g_dev_info = NULL;
+  *
+  *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
+  */
+-#define TLV_CODE_PRODUCT_NAME   0x21
+-#define TLV_CODE_PART_NUMBER    0x22
+-#define TLV_CODE_SERIAL_NUMBER  0x23
+-#define TLV_CODE_MAC_BASE       0x24
+-#define TLV_CODE_MANUF_DATE     0x25
+-#define TLV_CODE_DEVICE_VERSION 0x26
+-#define TLV_CODE_LABEL_REVISION 0x27
+-#define TLV_CODE_PLATFORM_NAME  0x28
+-#define TLV_CODE_ONIE_VERSION   0x29
+-#define TLV_CODE_MAC_SIZE       0x2A
+-#define TLV_CODE_MANUF_NAME     0x2B
+-#define TLV_CODE_MANUF_COUNTRY  0x2C
+-#define TLV_CODE_VENDOR_NAME    0x2D
+-#define TLV_CODE_DIAG_VERSION   0x2E
+-#define TLV_CODE_SERVICE_TAG    0x2F
+-#define TLV_CODE_VENDOR_EXT     0xFD
+-#define TLV_CODE_CRC_32         0xFE
+-
+-#define TLV_CODE_EXT_NO_CMD     0
+-#define TLV_CODE_EXT_CARD_ID    0x1
++#define TLV_CODE_PRODUCT_NAME   (0x21)
++#define TLV_CODE_PART_NUMBER    (0x22)
++#define TLV_CODE_SERIAL_NUMBER  (0x23)
++#define TLV_CODE_MAC_BASE       (0x24)
++#define TLV_CODE_MANUF_DATE     (0x25)
++#define TLV_CODE_DEVICE_VERSION (0x26)
++#define TLV_CODE_LABEL_REVISION (0x27)
++#define TLV_CODE_PLATFORM_NAME  (0x28)
++#define TLV_CODE_ONIE_VERSION   (0x29)
++#define TLV_CODE_MAC_SIZE       (0x2A)
++#define TLV_CODE_MANUF_NAME     (0x2B)
++#define TLV_CODE_MANUF_COUNTRY  (0x2C)
++#define TLV_CODE_VENDOR_NAME    (0x2D)
++#define TLV_CODE_DIAG_VERSION   (0x2E)
++#define TLV_CODE_SERVICE_TAG    (0x2F)
++#define TLV_CODE_VENDOR_EXT     (0xFD)
++#define TLV_CODE_CRC_32         (0xFE)
++
++#define TLV_CODE_EXT_NO_CMD     (0)
++#define TLV_CODE_EXT_CARD_ID    (0x1)
+ 
+ 
+ // Header Field Constants
+@@ -126,28 +140,28 @@ typedef struct tlv_decode_value_s {
+ #ifndef BIT
+ #define BIT(nr)		(1 << (nr))
+ #endif
+-#define PCA9641_ADDR           0x10
+-#define PCA9641_ID             0x00
+-#define PCA9641_ID_MAGIC       0x38
+-#define PCA9641_CONTROL        0x01
+-#define PCA9641_STATUS         0x02
+-#define PCA9641_TIME           0x03
+-#define PCA9641_CTL_LOCK_REQ           BIT(0)
+-#define PCA9641_CTL_LOCK_GRANT         BIT(1)
+-#define PCA9641_CTL_BUS_CONNECT        BIT(2)
+-#define PCA9641_CTL_BUS_INIT           BIT(3)
+-#define PCA9641_CTL_SMBUS_SWRST        BIT(4)
+-#define PCA9641_CTL_IDLE_TIMER_DIS     BIT(5)
+-#define PCA9641_CTL_SMBUS_DIS          BIT(6)
+-#define PCA9641_CTL_PRIORITY           BIT(7)
+-#define PCA9641_STS_OTHER_LOCK         BIT(0)
+-#define PCA9641_STS_BUS_INIT_FAIL      BIT(1)
+-#define PCA9641_STS_BUS_HUNG           BIT(2)
+-#define PCA9641_STS_MBOX_EMPTY         BIT(3)
+-#define PCA9641_STS_MBOX_FULL          BIT(4)
+-#define PCA9641_STS_TEST_INT           BIT(5)
+-#define PCA9641_STS_SCL_IO             BIT(6)
+-#define PCA9641_STS_SDA_IO             BIT(7)
++#define PCA9641_ADDR                   (0x10)
++#define PCA9641_ID                     (0x00)
++#define PCA9641_ID_MAGIC               (0x38)
++#define PCA9641_CONTROL                (0x01)
++#define PCA9641_STATUS                 (0x02)
++#define PCA9641_TIME                   (0x03)
++#define PCA9641_CTL_LOCK_REQ           (BIT(0))
++#define PCA9641_CTL_LOCK_GRANT         (BIT(1))
++#define PCA9641_CTL_BUS_CONNECT        (BIT(2))
++#define PCA9641_CTL_BUS_INIT           (BIT(3))
++#define PCA9641_CTL_SMBUS_SWRST        (BIT(4))
++#define PCA9641_CTL_IDLE_TIMER_DIS     (BIT(5))
++#define PCA9641_CTL_SMBUS_DIS          (BIT(6))
++#define PCA9641_CTL_PRIORITY           (BIT(7))
++#define PCA9641_STS_OTHER_LOCK         (BIT(0))
++#define PCA9641_STS_BUS_INIT_FAIL      (BIT(1))
++#define PCA9641_STS_BUS_HUNG           (BIT(2))
++#define PCA9641_STS_MBOX_EMPTY         (BIT(3))
++#define PCA9641_STS_MBOX_FULL          (BIT(4))
++#define PCA9641_STS_TEST_INT           (BIT(5))
++#define PCA9641_STS_SCL_IO             (BIT(6))
++#define PCA9641_STS_SDA_IO             (BIT(7))
+ 
+ #define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
+                        !((y) & PCA9641_STS_OTHER_LOCK))
+@@ -171,7 +185,18 @@ product_map_t fit_product_list[] = {
+     {"NONE", "none"},
+ };
+ 
+-#define PRODUCT_LIST_LEN (sizeof(fit_product_list) / sizeof(fit_product_list[0]))
++static u8 calculate_crc(const u8 *data, int len)
++{
++    char crc;
++    int byte;
++
++    crc = 0;
++    for(byte = 0; byte < len; byte++) {
++        crc += *data++;
++    }
++
++    return (-crc);
++}
+ 
+ static inline int _a2v(const uint8_t *a)
+ {
+@@ -189,7 +214,6 @@ static inline int _a2v(const uint8_t *a)
+   return -1;
+ }
+ 
+-
+ static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
+ {
+     return ((tlv->type != 0x00) && (tlv->type != 0xFF));
+@@ -535,7 +559,6 @@ static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t si
+     return 0;
+ }
+ 
+-
+ static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+ {
+     int i, a2v_tmp1, a2v_tmp2;
+@@ -560,6 +583,41 @@ static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t
+     return 0;
+ }
+ 
++static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
++{
++    int offset;
++    int i;
++    u32 len;
++
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    /* skip Product Area Format Version, Product Area Length and Language Code */
++    offset += 3;
++    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
++        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
++            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++                fru_mac_extra_index);
++            return -1;
++        }
++
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
++            if (len != MAC_ADDR_LENGTH) {
++                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
++                    len, fru_mac_extra_index);
++                return -1;
++            }
++            memcpy(buf, &(eeprom[offset + 1]), size);
++            return 0;
++        }
++        offset += 1;
++        offset += len;
++    }
++
++    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++        fru_mac_extra_index);
++    return -1;
++}
++
+ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+ {
+     int ret;
+@@ -587,7 +645,7 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         return -1;
+     }
+ 
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+         if (product_id == g_dev_info_list[i].dev_type) {
+             *dev_info = &g_dev_info_list[i];
+             (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+@@ -622,14 +680,13 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         }
+     }
+ 
+-
+     memset(product, 0, sizeof(product));
+     ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+     if (ret < 0) {
+         return ret;
+     }
+ 
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+         if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+             /* name match */
+             *dev_info = &g_dev_info_list[i];
+@@ -643,6 +700,85 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+     return -1;
+ }
+ 
++static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret, offset;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    char product[PRODUCT_INFO_LEN];
++    int mac_addr_valid_flag;
++    u8 crc;
++    u32 len;
++
++    crc = calculate_crc(eeprom, IPMI_FRU_COMMON_HEADER - 1);
++    if (crc != eeprom[IPMI_FRU_COMMON_HEADER - 1]) {
++        printf("Invalid fru header crc: 0x%02x(must 0x%02x).\n", eeprom[IPMI_FRU_COMMON_HEADER - 1], crc);
++        return -1;
++    }
++
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    if (offset > PRODUCT_EEPROM_LEN) {
++        printf("Error product area offset: %d.\n", offset);
++        return -1;
++    }
++
++    memset(product, 0, sizeof(product));
++    /* skip Product Area Format Version, Product Area Length and Language Code */
++    offset += 3;
++    for (i = 0; i < IPMI_FRU_PRODUCT_NAME_INDEX; i++) {
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i+1) == IPMI_FRU_PRODUCT_NAME_INDEX) {
++            if (len >= PRODUCT_INFO_LEN) {
++                printf("Error: prodcut name length: %d\n", len);
++                len = PRODUCT_INFO_LEN - 1;
++            }
++            memcpy(product, &(eeprom[offset + 1]), len);
++            break;
++        }
++        offset += 1;
++        offset += len;
++    }
++
++    if (i == IPMI_FRU_PRODUCT_NAME_INDEX) {
++        printf("No found product name from fru eeprom.\n");
++        return -1;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++    }
++
++    return 0;
++}
++
+ static int pca9641_set_bus(struct udevice *dev)
+ {
+     int ret;
+@@ -852,6 +988,8 @@ static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_inf
+     /* wedge eeprom magic */
+     if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
+         ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
++    } else if (eeprom[0] == IPMI_FRU_HDR_BYTE_ZERO) {
++        ret = get_dev_info_from_fru_eeprom(eeprom, dev_info);
+     } else {
+         ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
+     }
+diff --git a/board/wb-obmc/ast/ast-g6.c b/board/wb-obmc/ast/ast-g6.c
+index ad04a74c..4f27f239 100644
+--- a/board/wb-obmc/ast/ast-g6.c
++++ b/board/wb-obmc/ast/ast-g6.c
+@@ -12,19 +12,24 @@
+ 
+ int env_save(void);
+ 
++#ifdef ARRAY_SIZE
++#undef ARRAY_SIZE
++#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
++#endif
++
+ #ifdef DEBUG
+ #define ast_debug(fmt, args...)	printf(fmt, ##args)
+ #else
+ #define ast_debug(fmt, args...)
+ #endif
+ 
+-#define ENV_PRODUCT_NAME       "productname"
+-#define ENV_BOARD_ID           "board_id"
++#define ENV_PRODUCT_NAME          "productname"
++#define ENV_BOARD_ID              "board_id"
+ 
+-#define ENV_PRODUCT_FLAG_NAME  "productflag"
+-#define ENV_CONF_FIT_NAME      "conffitname"
++#define ENV_PRODUCT_FLAG_NAME     "productflag"
++#define ENV_CONF_FIT_NAME         "conffitname"
+ 
+-#define ENV_PRODUCT_DEBUG      "productdebug"
++#define ENV_PRODUCT_DEBUG         "productdebug"
+ 
+ #define ENV_PRODUCT_FLAG_VAL      "1"
+ #define ENV_PRODUCT_NO_FLAG_VAL   "0"
+@@ -37,8 +42,8 @@ int env_save(void);
+ #define ENV_MAC3_ADDR             "eth3addr"
+ #define ENV_ETH_PRIME             "ethprime"
+ 
+-#define PRODUCT_I2C_ADDR     (0x57)
+-#define PRODUCT_EEPROM_LEN   (256)
++#define PRODUCT_I2C_ADDR          (0x57)
++#define PRODUCT_EEPROM_LEN        (256)
+ 
+ 
+ #define SCU_BASE	0x1e6e2000
+@@ -155,6 +160,15 @@ static void __maybe_unused espi_init(void)
+ 	writel(reg, ESPI_BASE + 0x000);
+ }
+ 
++/**************************fru eeprom**(***************************/
++#define IPMI_FRU_HDR_BYTE_ZERO               (1)
++#define IPMI_FRU_COMMON_HEADER               (8)
++#define IPMI_FRU_PRODUCT_OFFSET              (4)
++#define IPMI_FRU_PRODUCT_NAME_INDEX          (2)
++#define IPMI_FRU_PRODUCT_AREA_MIN_LEN        (7)
++#define IPMI_FRU_SENTINEL_VALUE              (0xC1)
++#define IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK  (0xC0)
++
+ /**************************wedge eeprom*****************************/
+ #define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
+ #define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
+@@ -167,26 +181,26 @@ static dev_info_t *g_dev_info = NULL;
+  *
+  *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
+  */
+-#define TLV_CODE_PRODUCT_NAME   0x21
+-#define TLV_CODE_PART_NUMBER    0x22
+-#define TLV_CODE_SERIAL_NUMBER  0x23
+-#define TLV_CODE_MAC_BASE       0x24
+-#define TLV_CODE_MANUF_DATE     0x25
+-#define TLV_CODE_DEVICE_VERSION 0x26
+-#define TLV_CODE_LABEL_REVISION 0x27
+-#define TLV_CODE_PLATFORM_NAME  0x28
+-#define TLV_CODE_ONIE_VERSION   0x29
+-#define TLV_CODE_MAC_SIZE       0x2A
+-#define TLV_CODE_MANUF_NAME     0x2B
+-#define TLV_CODE_MANUF_COUNTRY  0x2C
+-#define TLV_CODE_VENDOR_NAME    0x2D
+-#define TLV_CODE_DIAG_VERSION   0x2E
+-#define TLV_CODE_SERVICE_TAG    0x2F
+-#define TLV_CODE_VENDOR_EXT     0xFD
+-#define TLV_CODE_CRC_32         0xFE
+-
+-#define TLV_CODE_EXT_NO_CMD     0
+-#define TLV_CODE_EXT_CARD_ID    0x1
++#define TLV_CODE_PRODUCT_NAME   (0x21)
++#define TLV_CODE_PART_NUMBER    (0x22)
++#define TLV_CODE_SERIAL_NUMBER  (0x23)
++#define TLV_CODE_MAC_BASE       (0x24)
++#define TLV_CODE_MANUF_DATE     (0x25)
++#define TLV_CODE_DEVICE_VERSION (0x26)
++#define TLV_CODE_LABEL_REVISION (0x27)
++#define TLV_CODE_PLATFORM_NAME  (0x28)
++#define TLV_CODE_ONIE_VERSION   (0x29)
++#define TLV_CODE_MAC_SIZE       (0x2A)
++#define TLV_CODE_MANUF_NAME     (0x2B)
++#define TLV_CODE_MANUF_COUNTRY  (0x2C)
++#define TLV_CODE_VENDOR_NAME    (0x2D)
++#define TLV_CODE_DIAG_VERSION   (0x2E)
++#define TLV_CODE_SERVICE_TAG    (0x2F)
++#define TLV_CODE_VENDOR_EXT     (0xFD)
++#define TLV_CODE_CRC_32         (0xFE)
++
++#define TLV_CODE_EXT_NO_CMD     (0)
++#define TLV_CODE_EXT_CARD_ID    (0x1)
+ 
+ 
+ // Header Field Constants
+@@ -219,28 +233,28 @@ typedef struct tlv_decode_value_s {
+ #ifndef BIT
+ #define BIT(nr)		(1 << (nr))
+ #endif
+-#define PCA9641_ADDR           0x10
+-#define PCA9641_ID             0x00
+-#define PCA9641_ID_MAGIC       0x38
+-#define PCA9641_CONTROL        0x01
+-#define PCA9641_STATUS         0x02
+-#define PCA9641_TIME           0x03
+-#define PCA9641_CTL_LOCK_REQ           BIT(0)
+-#define PCA9641_CTL_LOCK_GRANT         BIT(1)
+-#define PCA9641_CTL_BUS_CONNECT        BIT(2)
+-#define PCA9641_CTL_BUS_INIT           BIT(3)
+-#define PCA9641_CTL_SMBUS_SWRST        BIT(4)
+-#define PCA9641_CTL_IDLE_TIMER_DIS     BIT(5)
+-#define PCA9641_CTL_SMBUS_DIS          BIT(6)
+-#define PCA9641_CTL_PRIORITY           BIT(7)
+-#define PCA9641_STS_OTHER_LOCK         BIT(0)
+-#define PCA9641_STS_BUS_INIT_FAIL      BIT(1)
+-#define PCA9641_STS_BUS_HUNG           BIT(2)
+-#define PCA9641_STS_MBOX_EMPTY         BIT(3)
+-#define PCA9641_STS_MBOX_FULL          BIT(4)
+-#define PCA9641_STS_TEST_INT           BIT(5)
+-#define PCA9641_STS_SCL_IO             BIT(6)
+-#define PCA9641_STS_SDA_IO             BIT(7)
++#define PCA9641_ADDR                   (0x10)
++#define PCA9641_ID                     (0x00)
++#define PCA9641_ID_MAGIC               (0x38)
++#define PCA9641_CONTROL                (0x01)
++#define PCA9641_STATUS                 (0x02)
++#define PCA9641_TIME                   (0x03)
++#define PCA9641_CTL_LOCK_REQ           (BIT(0))
++#define PCA9641_CTL_LOCK_GRANT         (BIT(1))
++#define PCA9641_CTL_BUS_CONNECT        (BIT(2))
++#define PCA9641_CTL_BUS_INIT           (BIT(3))
++#define PCA9641_CTL_SMBUS_SWRST        (BIT(4))
++#define PCA9641_CTL_IDLE_TIMER_DIS     (BIT(5))
++#define PCA9641_CTL_SMBUS_DIS          (BIT(6))
++#define PCA9641_CTL_PRIORITY           (BIT(7))
++#define PCA9641_STS_OTHER_LOCK         (BIT(0))
++#define PCA9641_STS_BUS_INIT_FAIL      (BIT(1))
++#define PCA9641_STS_BUS_HUNG           (BIT(2))
++#define PCA9641_STS_MBOX_EMPTY         (BIT(3))
++#define PCA9641_STS_MBOX_FULL          (BIT(4))
++#define PCA9641_STS_TEST_INT           (BIT(5))
++#define PCA9641_STS_SCL_IO             (BIT(6))
++#define PCA9641_STS_SDA_IO             (BIT(7))
+ 
+ #define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
+                        !((y) & PCA9641_STS_OTHER_LOCK))
+@@ -264,7 +278,18 @@ product_map_t fit_product_list[] = {
+     {"NONE", "none"},
+ };
+ 
+-#define PRODUCT_LIST_LEN (sizeof(fit_product_list) / sizeof(fit_product_list[0]))
++static u8 calculate_crc(const u8 *data, int len)
++{
++    char crc;
++    int byte;
++
++    crc = 0;
++    for(byte = 0; byte < len; byte++) {
++        crc += *data++;
++    }
++
++    return (-crc);
++}
+ 
+ static inline int _a2v(const uint8_t *a)
+ {
+@@ -282,7 +307,6 @@ static inline int _a2v(const uint8_t *a)
+   return -1;
+ }
+ 
+-
+ static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
+ {
+     return ((tlv->type != 0x00) && (tlv->type != 0xFF));
+@@ -628,7 +652,6 @@ static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t si
+     return 0;
+ }
+ 
+-
+ static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
+ {
+     int i, a2v_tmp1, a2v_tmp2;
+@@ -653,6 +676,41 @@ static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t
+     return 0;
+ }
+ 
++static int get_mac_from_fru_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size, int fru_mac_extra_index)
++{
++    int offset;
++    int i;
++    u32 len;
++
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    /* skip Product Area Format Version, Product Area Length and Language Code */
++    offset += 3;
++    for (i = 0; i < (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index); i++) {
++        if ((eeprom[offset] == IPMI_FRU_SENTINEL_VALUE) && (i >= IPMI_FRU_PRODUCT_AREA_MIN_LEN)) {
++            printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++                fru_mac_extra_index);
++            return -1;
++        }
++
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i + 1) == (IPMI_FRU_PRODUCT_AREA_MIN_LEN + fru_mac_extra_index)) {
++            if (len != MAC_ADDR_LENGTH) {
++                printf("Invalid mac address length: %d, fru product area mac extra index: %d.\n",
++                    len, fru_mac_extra_index);
++                return -1;
++            }
++            memcpy(buf, &(eeprom[offset + 1]), size);
++            return 0;
++        }
++        offset += 1;
++        offset += len;
++    }
++
++    printf("Not found mac address from fru eeprom, fru product area mac extra index: %d.\n",
++        fru_mac_extra_index);
++    return -1;
++}
++
+ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+ {
+     int ret;
+@@ -680,7 +738,7 @@ static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
+         return -1;
+     }
+ 
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+         if (product_id == g_dev_info_list[i].dev_type) {
+             *dev_info = &g_dev_info_list[i];
+             (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
+@@ -715,14 +773,13 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+         }
+     }
+ 
+-
+     memset(product, 0, sizeof(product));
+     ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
+     if (ret < 0) {
+         return ret;
+     }
+ 
+-    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
+         if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
+             /* name match */
+             *dev_info = &g_dev_info_list[i];
+@@ -736,6 +793,85 @@ static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_inf
+     return -1;
+ }
+ 
++static int get_dev_info_from_fru_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret, offset;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    char product[PRODUCT_INFO_LEN];
++    int mac_addr_valid_flag;
++    u8 crc;
++    u32 len;
++
++    crc = calculate_crc(eeprom, IPMI_FRU_COMMON_HEADER - 1);
++    if (crc != eeprom[IPMI_FRU_COMMON_HEADER - 1]) {
++        printf("Invalid fru header crc: 0x%02x(must 0x%02x).\n", eeprom[IPMI_FRU_COMMON_HEADER - 1], crc);
++        return -1;
++    }
++
++    offset = eeprom[IPMI_FRU_PRODUCT_OFFSET] * 8;
++    if (offset > PRODUCT_EEPROM_LEN) {
++        printf("Error product area offset: %d.\n", offset);
++        return -1;
++    }
++
++    memset(product, 0, sizeof(product));
++    /* skip Product Area Format Version, Product Area Length and Language Code */
++    offset += 3;
++    for (i = 0; i < IPMI_FRU_PRODUCT_NAME_INDEX; i++) {
++        len = (eeprom[offset] & (~IPMI_FRU_TYPE_LENGTH_TYPE_CODE_MASK)) & 0xff;
++        if ((i+1) == IPMI_FRU_PRODUCT_NAME_INDEX) {
++            if (len >= PRODUCT_INFO_LEN) {
++                printf("Error: prodcut name length: %d\n", len);
++                len = PRODUCT_INFO_LEN - 1;
++            }
++            memcpy(product, &(eeprom[offset + 1]), len);
++            break;
++        }
++        offset += 1;
++        offset += len;
++    }
++
++    if (i == IPMI_FRU_PRODUCT_NAME_INDEX) {
++        printf("No found product name from fru eeprom.\n");
++        return -1;
++    }
++
++    for (i = 0; i < ARRAY_SIZE(g_dev_info_list); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            break;
++        }
++    }
++
++    if (i == ARRAY_SIZE(g_dev_info_list)) {
++        printf("Product name: %s not found in dev_info_list.\n", product);
++        return -1;
++    }
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_fru_eeprom(eeprom, mac_addr, sizeof(mac_addr), (*dev_info)->fru_mac_extra_index);
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++    (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++    if (mac_addr_valid_flag) {
++        memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++    }
++
++    return 0;
++}
++
+ static int pca9641_set_bus(struct udevice *dev)
+ {
+     int ret;
+@@ -945,6 +1081,8 @@ static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_inf
+     /* wedge eeprom magic */
+     if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
+         ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
++    } else if (eeprom[0] == IPMI_FRU_HDR_BYTE_ZERO) {
++        ret = get_dev_info_from_fru_eeprom(eeprom, dev_info);
+     } else {
+         ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
+     }
+-- 
+2.25.1
+

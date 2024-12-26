@@ -1,0 +1,152 @@
+Usage for ALIBMC unittest
+
+1.  配置文件中增加PRODUCT_INFO（如下结构），用来表示产品信息，属性信息来源于platform、platform_cfg.json。
+PRODUCT_INFO = {
+    "VENDER_INFO":  'N/A',
+    "ARCH_PLATFORM": 'X86',
+    "PSU_FRULESS": False,
+    "FAN_FRULESS": False
+}
+
+2. testcase，引入unittest.skip机制，根据产品数学，进行相应用例的执行判断（unittest.skipIf  or unittest.skipUnless）
+e.g.
+    @unittest.skipUnless(unittest_config.PRODUCT_INFO["ARCH_PLATFORM"] ==  "X86", "CPU PLATFROM is not X86, Skip this case!")
+    def test_get_mca_error(self):
+
+3. CPLD 升级，采用配置文件的形式，通过每个项目不同的配置文件来指示该项目所需升级CPLD及CPLD 路径。
+    a. 在BMC /tmp 目录下新增cpld_image_map 文件，文件内容为：
+        {
+            "name_list": ["CTRL_CPLD"],
+            "file_list": ["/tmp/ctrl_cpld.vme"]
+        }
+    b. 如果如上配置文件不存在，则采用现有代码中的默认配置。
+
+4. 如果厂商使用自己的标记位进行判断，可直接使用 PRODUCT_INFO.VENDER_INFO 属性
+    self.cl_image_flag = True if unittest_config.PRODUCT_INFO["VENDER_INFO"] == "CL" else False
+
+
+5. unittest 测试结果举例：
+root@bmc:/tmp# hal_unittest     
+test_get_next_boot (test_bmc.TestHalBmc) ... ok
+test_get_state (test_bmc.TestHalBmc) ... ok
+test_get_status (test_bmc.TestHalBmc) ... ok
+test_get_version_all (test_bmc.TestHalBmc) ... ok
+test_set_next_boot (test_bmc.TestHalBmc) ... ok
+test_get_aer_error (test_cpu.TestHalCPU) ... skipped 'CPU PLATFROM is not X86, Skip this case!'
+test_get_last_reset (test_cpu.TestHalCPU) ... ok
+test_get_mca_error (test_cpu.TestHalCPU) ... skipped 'CPU PLATFROM is not X86, Skip this case!'
+test_get_state (test_cpu.TestHalCPU) ... ok
+test_get_dcdc_all_info (test_dcdc.TestHalDcdc) ... FAIL
+test_get_dcdc_sensor_descr (test_dcdc.TestHalDcdc) ... ok
+test_get_dcdc_sensor_value (test_dcdc.TestHalDcdc) ... FAIL
+test_get_dcdc_sensors (test_dcdc.TestHalDcdc) ... ok
+test_enable_watchdog (test_fan.TestHalFan) ... ok
+test_feed_watchdog (test_fan.TestHalFan) ... ok
+test_get_fan_fruless_info (test_fan.TestHalFan) ... ok
+test_get_fru_info (test_fan.TestHalFan) ... skipped 'FAN MODULE is  Builtin,   Skip this case!'
+test_get_info_all (test_fan.TestHalFan) ... ok
+test_get_presence (test_fan.TestHalFan) ... ok
+test_get_rotor_number (test_fan.TestHalFan) ... ok
+test_get_speed (test_fan.TestHalFan) ... ok
+test_get_speed_pwm (test_fan.TestHalFan) ... ok
+test_get_status (test_fan.TestHalFan) ... ok
+test_get_total_number (test_fan.TestHalFan) ... ok
+test_get_watchdog_status (test_fan.TestHalFan) ... ok
+test_set_led (test_fan.TestHalFan) ... ok
+test_set_speed (test_fan.TestHalFan) ... ok
+test_set_speed_pwm (test_fan.TestHalFan) ... ok
+test_get_bios_next_boot (test_firmware.TestHalFirmware) ... ok
+test_program_bios (test_firmware.TestHalFirmware) ... skipped 'CPU PLATFROM is not X86, Skip this case!'
+Erasing block: 6445/6445 (100%) TestHalFirmware) ... 
+Writing kb: 25776/25776 (100%) 
+Verifying kb: 25776/25776 (100%) 
+program_bmc: success
+Erasing block: 6445/6445 (100%) 
+Writing kb: 25776/25776 (100%) 
+Verifying kb: 25776/25776 (100%) 
+program_bmc: success
+ok
+test_program_cpld (test_firmware.TestHalFirmware) ... starting olu cpld image update
+                 Lattice Semiconductor Corp.
+
+             ispVME(tm) V12.2 Copyright 1998-2011.
+
+For daisy chain programming of all in-system programmable devices
+
+CPU Freq set as 1000 MHZ
+calibration ....
+
+Processing virtual machine file (raw.vme)......
+Diamond Deployment Tool 3.11
+CREATION DATE: Wed Jun 23 11:35:28 2021
+
+
+Warning! Don't power off......
+
+[?251                                                   [100%]
++=======+
+| PASS! |
++=======+
+
+program_cpld: success
+ok
+test_refresh_firmware (test_firmware.TestHalFirmware) ... ok
+test_set_bios_next_boot (test_firmware.TestHalFirmware) ... ok
+test_get_bios_boot_status (test_misc.TestHalMisc) ... ok
+�Initializing DDR....Trying to boot from QSPIsc) ... ok
+ok
+test_set_cpld_user_reg (test_misc.TestHalMisc) ... ok
+test_set_host_cpu_power (test_misc.TestHalMisc) ... ok
+test_set_location_led (test_misc.TestHalMisc) ... ok
+test_set_system_fan_led (test_misc.TestHalMisc) ... ok
+test_set_system_led (test_misc.TestHalMisc) ... unknown color
+ok
+test_set_system_power_led (test_misc.TestHalMisc) ... unknown color
+ok
+test_ssd_power_control (test_misc.TestHalMisc) ... ok
+test_switch_chip_power_control (test_misc.TestHalMisc) ... ok
+test_switch_port_power_control (test_misc.TestHalMisc) ... ok
+test_system_power_led_available (test_misc.TestHalMisc) ... ok
+test_get_fru_info (test_psu.TestHalPsu) ... skipped 'PSU is Fruless, Skip this case!'
+test_get_info_all (test_psu.TestHalPsu) ... skipped 'PSU is Fruless, Skip this case!'
+test_get_power_status (test_psu.TestHalPsu) ... skipped 'PSU is Fruless, Skip this case!'
+test_get_presence (test_psu.TestHalPsu) ... ok
+test_get_psu_fruless_info (test_psu.TestHalPsu) ... ok
+test_get_status (test_psu.TestHalPsu) ... skipped 'PSU is Fruless, Skip this case!'
+test_get_total_number (test_psu.TestHalPsu) ... ok
+test_set_psu_fan_speed_pwm (test_psu.TestHalPsu) ... skipped 'PSU is Fruless, Skip this case!'
+test_get_sensor_info (test_sensor.TestHalSensor) ... FAIL
+test_get_cpu_temp (test_temp.TestHalTemperature) ... ok
+test_get_inlet_temp (test_temp.TestHalTemperature) ... ok
+test_get_switch_temp (test_temp.TestHalTemperature) ... ok
+
+======================================================================
+FAIL: test_get_dcdc_all_info (test_dcdc.TestHalDcdc)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/hal/unittest/test_dcdc.py", line 68, in test_get_dcdc_all_info
+    self.assertGreaterEqual(val, val_min)
+AssertionError: 3.5680000782012939 not greater than or equal to 10.800000190734863
+
+======================================================================
+FAIL: test_get_dcdc_sensor_value (test_dcdc.TestHalDcdc)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/hal/unittest/test_dcdc.py", line 44, in test_get_dcdc_sensor_value
+    self.assertGreaterEqual(val, val_min)
+AssertionError: 3.5680000782012939 not greater than or equal to 10.800000190734863
+
+======================================================================
+FAIL: test_get_sensor_info (test_sensor.TestHalSensor)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/hal/unittest/test_sensor.py", line 38, in test_get_sensor_info
+    self.assertGreaterEqual(val, val_min, msg)
+AssertionError: 3.5039999485015869 not greater than or equal to 10.800000190734863 : name is PSU1_P12V_V
+
+
+----------------------------------------------------------------------
+Ran 66 tests in 2225.171s
+
+FAILED (failures=3, skipped=9)
+root@bmc:/tmp# 

@@ -1,0 +1,723 @@
+# Language cn translations for factest package.
+# Copyright (C) 2024 Ruijie
+# xushijie <xushijie@ruijie.com.cn>, 2024.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"POT-Creation-Date: 2024-05-10 14:50+0800\n"
+"PO-Revision-Date: 2024-05-10 14:50+0800\n"
+"Last-Translator: xushijie <xushijie@ruijie.com.cn>\n"
+"Language-Team: Chinese <simplified>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: pygettext.py 1.5\n"
+
+msgid "Background execution started"
+msgstr "已启动后台执行"
+
+msgid "End test"
+msgstr "结束测试"
+
+msgid "Unavailable"
+msgstr "待实现"
+
+msgid "Already have background execution task, please check the test results or terminate the previous test task"
+msgstr "后台已有该执行任务，请首先查看测试结果或终止上次测试任务"
+
+msgid "Background execution started"
+msgstr "已启动后台执行"
+
+msgid "Forced termination will not allow viewing results, continue? [Yes/No]:"
+msgstr "强行结束将无法查看结果，是否继续？[Yes/No]："
+
+msgid "Background test not started"
+msgstr "未启动后台测试"
+
+msgid "Canceled"
+msgstr "已撤销"
+
+msgid "This background test has been terminated"
+msgstr "该后台测试已被终止"
+
+msgid "Background test not started, no test results"
+msgstr "未启动后台测试，没有测试结果"
+
+msgid "Test not finished, about %smins remaining, please check results later"
+msgstr "测试还未结束，测试时长约%smins, 请稍后查看结果"
+
+msgid "No data"
+msgstr "没有数据"
+
+msgid "Command execution error [%s]"
+msgstr "命令执行出错[%s]"
+
+msgid "emmc usage rate: %.1f%s"
+msgstr "emmc     使用率: %.1f%s"
+
+msgid "/var/log usage: %.1f%s"
+msgstr "/var/log 使用率: %.1f%s"
+
+msgid "Items with over 40% usage"
+msgstr "出现使用超过40%的项目"
+
+msgid "get eMMC register configuration error"
+msgstr "获取eMMC寄存器配置错误"
+
+msgid "Failed to read eMMC register value %s (%s): %s\n"
+msgstr "eMMC寄存器值%s读取失败(%s): %s\n"
+
+msgid "get eMMC register configuration error"
+msgstr "eMMC寄存器值%s读取失败(%s): %s"
+
+msgid "Failed to read EXT_CSD register byte 268: %s"
+msgstr "EXT_CSD寄存器第268字节读取失败: %s"
+
+msgid "Warning: undefined lifetime value detected"
+msgstr "警告：检测到未定义寿命值"
+
+msgid "eMMC lifetime normal"
+msgstr "eMMC寿命正常"
+
+msgid "Warning: eMMC lifetime used exceeds 10%"
+msgstr "警告：eMMC已使用寿命超过10%"
+
+msgid "eMMC register EXT_CSD configuration not found"
+msgstr "未找到eMMC寄存器EXT_CSD的配置"
+
+msgid "Cannot find specified eMMC FIO configuration"
+msgstr "找不到指定的eMMC FIO配置"
+
+msgid "%s test failed (%s): %s"
+msgstr "%s测试失败(%s): %s"
+
+msgid "Failed to get capacity information"
+msgstr "获取容量信息失败"
+
+msgid "EMMC capacity is %d MB"
+msgstr "EMMC 容量为 %d MB"
+
+msgid "Failed to access CPU through PECI, %s"
+msgstr "通过PECI访问CPU失败, %s"
+
+msgid "Succeeded accessing CPU through PECI"
+msgstr "通过PECI访问CPU成功"
+
+msgid "%s test failed"
+msgstr "%s 测试失败"
+
+msgid "%s test passed, read register 0x%02x value %s"
+msgstr "%s 测试成功,读到寄存器0x%02x的值为%s"
+
+msgid "\n\n Test count: %d/%d"
+msgstr "\n\n第 %d/%d 次测试"
+
+msgid "Failed to read presence information: %s"
+msgstr "读取在位信息失败: %s"
+
+msgid "Fan%d"
+msgstr "风扇%d"
+
+msgid ":not present"
+msgstr ":不在位"
+
+msgid ":present"
+msgstr ":在位"
+
+msgid "fanctrl service restart exception: %s"
+msgstr "服务fanctrl重启异常: %s"
+
+msgid "    %s: information getting failed"
+msgstr "    %s:信息获取失败"
+
+msgid "    %s: not present"
+msgstr "    %s:不在位"
+
+msgid "    %s-motor%d: failed to get information"
+msgstr "    %s-子风扇%d:获取信息失败"
+
+msgid "    %s-motor%d: %dRPM, not in normal threshold range %d, %d"
+msgstr "    %s-子风扇%d:%dRPM,不在正常阈值范围内%d,%d"
+
+msgid "    %s-motor%d: %dRPM"
+msgstr "    %s-子风扇%d:%dRPM"
+
+msgid "Read fan registers"
+msgstr "读取风扇寄存器"
+
+msgid "    Fan watchdog status:%s"
+msgstr "    风扇狗状态:%s"
+
+msgid "Fan"
+msgstr "风扇"
+
+msgid "    %s: failed to set speed level"
+msgstr "    %s:设置转速等级失败"
+
+msgid "    %s set speed level to %s"
+msgstr "    %s 设置转速等级为 %s"
+
+msgid "Read fan speed"
+msgstr "读取风扇转速"
+
+msgid "    %s-motor%d: failed to read speed information"
+msgstr "    %s-子风扇%d:读取转速信息失败"
+
+msgid "    %s-motor%d: %sRPM, not in normal threshold range %d, %d"
+msgstr "    %s-子风扇%d:%sRPM,不在正常阈值范围内%d,%d"
+
+msgid "    %s-motor%d: %sRPM"
+msgstr "    %s-子风扇%d:%sRPM"
+
+msgid "not present "
+msgstr "不在位"
+
+msgid "Failed to read e2 information"
+msgstr "读取e2信息失败"
+
+msgid "Input current"
+msgstr "输入电流"
+
+msgid "Output current"
+msgstr "输出电流"
+
+msgid "Input voltage"
+msgstr "输入电压"
+
+msgid "Output voltage"
+msgstr "输出电压"
+
+msgid "Output power"
+msgstr "输出功率"
+
+msgid "Input power"
+msgstr "输入功率"
+
+msgid "Read information failed"
+msgstr "读取信息失败"
+
+msgid "Error retrieving MULTIPLE_POWER_EXCEPTIONS configuration"
+msgstr "获取MULTIPLE_POWER_EXCEPTIONS配置错误"
+
+msgid "Set   FAILED"
+msgstr "设置失败       FAILD"
+
+msgid "%s read/write test:"
+msgstr "%s 读写测试:"
+
+msgid "    Write %x, read %s"
+msgstr "    写入%x，读出%s"
+
+msgid "\n%s: not present "
+msgstr "\n%s: 不在位 "
+
+msgid "present "
+msgstr "在位"
+
+msgid "power on "
+msgstr "上电"
+
+msgid "Not powered"
+msgstr "未上电"
+
+msgid "Fault-"
+msgstr "故障-"
+
+msgid "Normal"
+msgstr "正常"
+
+msgid "Fault"
+msgstr "故障"
+
+msgid "No disconnected record"
+msgstr "未脱离过"
+
+msgid "Disconnected before"
+msgstr "脱离过"
+
+msgid "Execute command %s failed: %s"
+msgstr "执行命令%s失败: %s"
+
+msgid "Start time: %s"
+msgstr "开始时间:%s"
+
+msgid "End time: %s"
+msgstr "结束时间:%s"
+
+msgid "Error: RTC test failed"
+msgstr "Error:RTC测试失败"
+
+msgid "MAC voltage CPLD register value converted value: %s"
+msgstr "MAC电压CPLD寄存器值转换值:%s"
+
+msgid "MAC voltage CPLD register value converted value: %.4fV"
+msgstr "MAC电压CPLD寄存器值转换值:%.4fV"
+
+msgid "MAC voltage CPLD register value conversion failed: %s"
+msgstr "MAC电压CPLD寄存器值转换失败:%s"
+
+msgid "MAC actual voltage value: None"
+msgstr "MAC实际电压值:None"
+
+msgid "MAC actual voltage value: %.4fV"
+msgstr "MAC实际电压值:%.4fV"
+
+msgid "MAC deviation Min: %s Max: %s"
+msgstr "MAC 偏差值 Min: %s Max: %s"
+
+msgid "  FAILED: MAC deviation exceeds range: [%.4f, %.4f]"
+msgstr "  FAILED: MAC偏差值超出范围: [%.4f, %.4f]"
+
+msgid "CPU %s actual voltage value: None"
+msgstr "CPU %s 实际电压值: None"
+
+msgid "CPU %s actual voltage value: %.4fV"
+msgstr "CPU %s 实际电压值: %.4fV"
+
+msgid "CPU %s regulator register value range: (%.4fV, %.4fV)"
+msgstr "CPU %s 调压寄存器值范围: (%.4fV, %.4fV)"
+
+msgid "CPU %s regulator register value: None"
+msgstr "CPU %s 调压寄存器值: None"
+
+msgid "  FAILED: CPU %s actual voltage value needs to be within regulator register value range"
+msgstr "  FAILED: CPU %s 实际电压值需在调压寄存器值范围内"
+
+msgid "CPU %s regulator register value: %.4fV"
+msgstr "CPU %s 调压寄存器值: %.4fV"
+
+msgid "  FAILED: CPU %s actual voltage value needs to be greater than or equal to regulator register value"
+msgstr "  FAILED: CPU %s 实际电压值需大于等于调压寄存器值"
+
+msgid "    [%s] Command execution error: %d"
+msgstr "    [%s]命令执行出错 : %d"
+
+msgid "    Error retrieving MAC_VOUT_EXPONENT configuration"
+msgstr "    获取MAC_VOUT_EXPONENT配置错误"
+
+msgid "    VOUT_MODE register value abnormal: %s"
+msgstr "    VOUT_MODE寄存器值异常: %s"
+
+msgid "Error retrieving SET_AVS_TEST configuration"
+msgstr "获取SET_AVS_TEST配置错误"
+
+msgid "Error retrieving test_item configuration"
+msgstr "获取test_item配置错误"
+
+msgid "    Failed to retrieve current voltage: %d"
+msgstr "    获取当前电压失败:%d"
+
+msgid "    Before voltage regulation, current voltage is %.2f mV"
+msgstr "    调压前,当前电压 %.2f mV"
+
+msgid "    Failed to retrieve current voltage regulation value: %d"
+msgstr "    获取当前调压值失败:%d"
+
+msgid "    Before voltage regulation, current voltage regulation value is 0x%x"
+msgstr "    调压前,当前调压值 0x%x"
+
+msgid "    Target voltage regulation value %.2f mV exceeds threshold [%.2f mV, %.2f mV], no regulation performed"
+msgstr "    目标调压值 %.2f mV 超出阈值 [%.2f mV, %.2f mV],不进行调压"
+
+msgid "    Error retrieving switch_page1 configuration"
+msgstr "    获取switch_page1配置错误"
+
+msgid "    switch_page failed: %s"
+msgstr "    switch_page失败:%s"
+
+msgid "    Error retrieving get_vout_mode configuration"
+msgstr "    获取get_vout_mode配置错误"
+
+msgid "    Failed to set target voltage regulation value 0x%x: %d"
+msgstr "    设置目标调压值 0x%x 失败: %d"
+
+msgid "    Failed to retrieve current voltage value: %d"
+msgstr "    获取当前电压值失败: %d"
+
+msgid "    After voltage regulation, current voltage regulation value is 0x%x"
+msgstr "    调压后,当前调压值 0x%x"
+
+msgid "    Current voltage regulation value 0x%x does not match the set target voltage regulation value 0x%x"
+msgstr "    当前调压值 0x%x 与设置的目标调压值 0x%x 不符"
+
+msgid "    Failed to retrieve current voltage: %d"
+msgstr "    获取当前电压失败: %d"
+
+msgid "    After voltage regulation, current voltage is %.2f mV"
+msgstr "    调压后,当前电压 %.2f mV"
+
+msgid "    Voltage threshold [%.2f mV, %.2f mV]"
+msgstr "    电压阈值 [%.2f mV, %.2f mV]"
+
+msgid "    Current voltage exceeds threshold"
+msgstr "    当前电压超出阈值"
+
+msgid "    Voltage regulation successful"
+msgstr "    调压成功"
+
+msgid "    Error retrieving recover_page configuration"
+msgstr "    获取recover_page配置错误"
+
+msgid "    recover_page failed: %s"
+msgstr "   recover_page失败:%s"
+
+msgid "    Voltage regulation failed, please execute to restore normal voltage"
+msgstr "    调压失败,请执行恢复正常电压"
+
+msgid "CPU CPLD upgrade channel(14-0040)         "
+msgstr "CPU CPLD升级通道(14-0040)                  "
+
+msgid "CPU VR power 1 XDPE12284C(15-005e)        "
+msgstr "CPU VR电源1 XDPE12284C(15-005e)            "
+
+msgid "CPU VR power 2 XDPE12284C(15-0068)        "
+msgstr "CPU VR电源2 XDPE12284C(15-0068)            "
+
+msgid "CPU VR power 3 XDPE12284C(15-006e)        "
+msgstr "CPU VR电源3 XDPE12284C(15-006e)            "
+
+msgid "CPU VR power 4 XDPE12284C(15-0070)        "
+msgstr "CPU VR电源4 XDPE12284C(15-0070)            "
+
+msgid "BASE RTC channel(3-0051)                  "
+msgstr "BASE RTC通道(3-0051)                       "    
+
+msgid "BASE voltage/current monitoring 1(INA3221)(30-0041)  "
+msgstr "BASE 电压电流监控1(INA3221)(30-0041)       "
+
+msgid "BASE voltage/current monitoring 2(INA3221)(31-0041)  "
+msgstr "BASE 电压电流监控2(INA3221)(31-0041)       "
+
+msgid "BASE voltage/current monitoring 3(INA3221)(32-0041)  "
+msgstr "BASE 电压电流监控3(INA3221)(32-0041)       "
+
+msgid "BASE voltage/current monitoring 4(INA3221)(33-0041)  "
+msgstr "BASE 电压电流监控4(INA3221)(33-0041)       "
+
+msgid "LC voltage/current monitoring 0(INA3221)(46-0040)    "
+msgstr "LC 电压电流监控0（INA3221)(46-0040)        "
+
+msgid "LC voltage/current monitoring 1(INA3221)(47-0040)    "
+msgstr "LC 电压电流监控1（INA3221)(47-0040)        "
+
+msgid "MAC voltage/current monitoring 0(INA3221)(54-0040)   "
+msgstr "MAC 电压电流监控0（INA3221)(54-0040)       "
+
+msgid "MAC voltage/current monitoring 1(INA3221)(55-0040)   "
+msgstr "MAC 电压电流监控1（INA3221)(55-0040)       "
+
+msgid "MAC voltage/current monitoring 2(INA3221)(56-0040)   "
+msgstr "MAC 电压电流监控2（INA3221)(56-0040)       "
+
+msgid "MAC voltage/current monitoring 3(INA3221)(57-0040)   "
+msgstr "MAC 电压电流监控3（INA3221)(57-0040)       "
+
+msgid "MAC voltage/current monitoring 4(INA3221)(58-0040)   "
+msgstr "MAC 电压电流监控4（INA3221)(58-0040)       "
+
+msgid "MAC voltage/current monitoring 5(INA3221)(59-0040)   "
+msgstr "MAC 电压电流监控5（INA3221)(59-0040)       "
+
+msgid "BMC accesses FPGA channel (5-0032)        "  
+msgstr "BMC访问FPGA通道(5-0032)                    "
+
+msgid "MAC CPLD upgrade channel(62-0040)         "
+msgstr "MAC CPLD升级通道(62-0040)                  "
+
+msgid "MAC CPLD1 upgrade channel(63-0040)        "
+msgstr "MAC CPLD1升级通路(63-0040)                 "
+
+msgid "MAC CPLD2 upgrade channel(64-0040)        "
+msgstr "MAC CPLD2升级通路(64-0040)                 "
+
+msgid "LC CPLD upgrade channel(65-0040)          "
+msgstr "LC CPLD升级通路(65-0040)                   "
+
+msgid "TH5 BSC2 channel (7-0044)                 "
+msgstr "TH5 BSC2通道(7-0044)                       "
+
+msgid "Fan module_1 E2PROM(90-0050)              "
+msgstr "风扇模组_1 E2PROM(90-0050)                 "
+
+msgid "Fan module_2 E2PROM(89-0050)              "
+msgstr "风扇模组_2 E2PROM(89-0050)                 "
+
+msgid "Fan module_3 E2PROM(88-0050)              "
+msgstr "风扇模组_3 E2PROM(88-0050)                 "
+
+msgid "Fan module_4 E2PROM(87-0050)              "
+msgstr "风扇模组_4 E2PROM(87-0050)                 "
+
+msgid "Fan module_5 E2PROM(86-0050)              "
+msgstr "风扇模组_5 E2PROM(86-0050)                 "
+
+msgid "Front panel sys, pwr, fan LED"
+msgstr "前面板灯sys、pwr、fan灯"
+
+msgid "Fan LED"
+msgstr "风扇灯"
+
+msgid "location LED"
+msgstr "location 灯"
+
+msgid "Fan1"
+msgstr "风扇1"
+
+msgid "Fan2"
+msgstr "风扇2"
+      
+msgid "Fan3"
+msgstr "风扇3"
+
+msgid "Fan4"
+msgstr "风扇4"
+
+msgid "Fan5"
+msgstr "风扇5"
+
+msgid "Fan6"
+msgstr "风扇6"
+
+msgid "Detection line not inserted"
+msgstr "没插入检测线"
+
+msgid "Water leakage warning"
+msgstr "漏水警告"
+
+msgid "Disconnection warning"
+msgstr "断线警告"
+
+msgid "Detection line normal"
+msgstr "检测线正常"
+
+msgid "CPU CPLD"
+msgstr "CPU底板CPLD"
+
+msgid "BASE CPLD"
+msgstr "CPU板CPLD"
+
+msgid "FAN CPLD"
+msgstr "风扇板CPLD"
+
+msgid "BASE CPLD upgrade channel(0-0040)               "
+msgstr "BASE CPLD升级通路(0-0040)               "
+
+msgid "CPU CPLD upgrade channel(1-0040)                "
+msgstr "CPU CPLD升级通路(1-0040)                "
+
+msgid "RC32012 Clock(15-0058)                    "
+msgstr "RC32012时钟(15-0058)                    "
+
+msgid "MAC CPLD1 upgrade channel(18-0040)               "
+msgstr "MAC CPLD1升级通路(18-0040)               "
+
+msgid "MAC CPLD2 upgrade channel(19-0040)               "
+msgstr "MAC CPLD2升级通路(19-0040)               "
+
+msgid "BMC accesses FPGA channel(5-0070)                 "
+msgstr "BMC访问FPGA通道(5-0070)                 "
+
+msgid "RTC channel(6-0051)                         "
+msgstr "RTC通道(6-0051)                         "
+
+msgid "MAC board TMP275（top layer of the air inlet）(7-0048)      "
+msgstr "MAC板TMP275（入风口 top层）(7-0048)      "
+
+msgid "MAC board TMP275（Top layer of the hottest spot）(7-0049)      "
+msgstr "MAC板TMP275（最热点 top层）(7-0049)      "
+
+msgid "MAC board TMP275（Bottom layer of the air inlet）(7-004B)   "
+msgstr "MAC板TMP275（入风口 bottom层）(7-004B)   "
+
+msgid "TD4 BSC2 channel(7-0044)                    "
+msgstr "TD4 BSC2通道(7-0044)                    "
+
+msgid "TD4 TMP411 chip(7-004C)                  "
+msgstr "TD4 TMP411芯片(7-004C)                  "
+
+msgid "FCB CPLD upgrade channel(8-0040)                "
+msgstr "FCB CPLD 升级通路(8-0040)                "
+
+msgid "FCB board TMP275(60-0049)                   "
+msgstr "FCB板 TMP275(60-0049)                   "
+
+msgid "FCB board TMP275(61-0048)                   "
+msgstr "FCB板 TMP275(61-0048)                   "
+
+msgid "Set fan speed"
+msgstr "设置风扇转速"
+
+msgid "BASE CPLD(0-000D)                          "
+msgstr "BASE CPLD(0-000D)                          "
+
+msgid "CPU board CPLD(14-000d)                         "
+msgstr "CPU板CPLD(14-000d)                         "
+
+msgid "CPU board CPLD upgrade channel(14-0040)                 "
+msgstr "CPU板CPLD升级通道(14-0040)                 "
+
+msgid "CPU board E2PROM(14-0050)                      "
+msgstr "CPU板 E2PROM(14-0050)                      "
+
+msgid "CPU board UCD90160(15-005f)                    "
+msgstr "CPU板 UCD90160(15-005f)                    "
+
+msgid "CPU board VR power 1 XDPE12284C(15-005e)          "
+msgstr "CPU板 VR电源1 XDPE12284C(15-005e)          "
+
+msgid "CPU board VR power 2 XDPE12284C(15-0068)          "
+msgstr "CPU板 VR电源2 XDPE12284C(15-0068)          "
+
+msgid "CPU board VR power 3 XDPE12284C(15-006e)          "
+msgstr "CPU板 VR电源3 XDPE12284C(15-006e)          "
+
+msgid "CPU board VR power 4 XDPE12284C(15-0070)          "
+msgstr "CPU板 VR电源4 XDPE12284C(15-0070)          "
+
+msgid "BMC board EEPROM(2-0053)                       "
+msgstr "BMC板 EEPROM(2-0053)                       "
+
+msgid "BASE board EEPROM(2-0057)                      "
+msgstr "BASE板 EEPROM(2-0057)                      "
+
+msgid "MAC board EEPROM(22-0051)                      "
+msgstr "MAC板 EEPROM(22-0051)                      "
+
+msgid "LC board EEPROM(23-0052)                       "
+msgstr "LC板 EEPROM(23-0052)                       "
+
+msgid "BASE board RTC channel(3-0051)                     "
+msgstr "BASE板 RTC通道(3-0051)                     "
+
+msgid "BASE board voltage/current monitoring 1(INA3221)(30-0041)     "
+msgstr "BASE板 电压电流监控1(INA3221)(30-0041)     "
+
+msgid "BASE board voltage/current monitoring 2(INA3221)(31-0041)     "
+msgstr "BASE板 电压电流监控2(INA3221)(31-0041)     "
+
+msgid "BASE board voltage/current monitoring 3(INA3221)(32-0041)     "
+msgstr "BASE板 电压电流监控3(INA3221)(32-0041)     "
+
+msgid "BASE board voltage/current monitoring 4(INA3221)(33-0041)     "
+msgstr "BASE板 电压电流监控4(INA3221)(33-0041)     "
+
+msgid "LC board voltage/current monitoring 0(INA3221)(46-0040)      "
+msgstr "LC板 电压电流监控0（INA3221)(46-0040)      "
+
+msgid "LC board voltage/current monitoring 1(INA3221)(47-0040)      "
+msgstr "LC板 电压电流监控1（INA3221)(47-0040)      "
+
+msgid "MAC board voltage/current monitoring 0(INA3221)(54-0040)     "
+msgstr "MAC板 电压电流监控0（INA3221)(54-0040)     "
+
+msgid "MAC board voltage/current monitoring 1(INA3221)(55-0040)     "
+msgstr "MAC板 电压电流监控1（INA3221)(55-0040)     "
+
+msgid "MAC board voltage/current monitoring 2(INA3221)(56-0040)     "
+msgstr "MAC板 电压电流监控2（INA3221)(56-0040)     "
+
+msgid "MAC board voltage/current monitoring 3(INA3221)(57-0040)     "
+msgstr "MAC板 电压电流监控3（INA3221)(57-0040)     "
+
+msgid "MAC board voltage/current monitoring 4(INA3221)(58-0040)     "
+msgstr "MAC板 电压电流监控4（INA3221)(58-0040)     "
+
+msgid "MAC board voltage/current monitoring 5(INA3221)(59-0040)     "
+msgstr "MAC板 电压电流监控5（INA3221)(59-0040)     "
+
+msgid "BMC accesses FPGA channel (5-0032)                    "
+msgstr "BMC访问FPGA通道(5-0032)                    "
+
+msgid "MAC board MISC CPLD(62-0030)                    "
+msgstr "MAC板MISC CPLD(62-0030)                    "
+
+msgid "MAC board CPLD upgrade channel(62-0040)                 "
+msgstr "MAC板CPLD升级通道(62-0040)                 "
+
+msgid "MAC board CPLD1(63-0031)                        "
+msgstr "MAC板CPLD1(63-0031)                        "
+
+msgid "MAC board CPLD1 upgrade channel(63-0040)                "
+msgstr "MAC板CPLD1升级通路(63-0040)                "
+
+msgid "MAC board CPLD2(64-0031)                        "
+msgstr "MAC板CPLD2(64-0031)                        "
+
+msgid "MAC board CPLD2 upgrade channel(64-0040)                "
+msgstr "MAC板CPLD2升级通路(64-0040)                "
+
+msgid "LC board CPLD(65-0031)                          "
+msgstr "LC板CPLD(65-0031)                          "
+
+msgid "LC board CPLD upgrade channel(65-0040)                  "
+msgstr "LC板CPLD升级通路(65-0040)                  "
+
+msgid "TH5 BSC2 channel (7-0044)                       "
+msgstr "TH5 BSC2通道(7-0044)                       "
+
+msgid "LC board TMP275(78-0048)                        "
+msgstr "LC板TMP275(78-0048)                        "
+
+msgid "FCB board CPLD(8-000d)                         "
+msgstr "FCB板 CPLD(8-000d)                         "
+
+msgid "Fan module_1 E2PROM(90-0050)                 "
+msgstr "风扇模组_1 E2PROM(90-0050)                 "
+
+msgid "Fan module_2 E2PROM(89-0050)                 "
+msgstr "风扇模组_2 E2PROM(89-0050)                 "
+
+msgid "Fan module_3 E2PROM(88-0050)                 "
+msgstr "风扇模组_3 E2PROM(88-0050)                 "
+
+msgid "Fan module_4 E2PROM(87-0050)                 "
+msgstr "风扇模组_4 E2PROM(87-0050)                 "
+
+msgid "Fan module_5 E2PROM(86-0050)                 "
+msgstr "风扇模组_5 E2PROM(86-0050)                 "
+
+msgid "Fan module_1 E2PROM(88-0050)                 "
+msgstr "风扇模组_1 E2PROM(88-0050)                 "
+
+msgid "Fan module_2 E2PROM(87-0050)                 "
+msgstr "风扇模组_2 E2PROM(87-0050)                 "
+
+msgid "Fan module_3 E2PROM(86-0050)                 "
+msgstr "风扇模组_3 E2PROM(86-0050)                 "
+
+msgid "PCIE PORT board CPLD upgrade channel(66-0040)           "
+msgstr "PCIE PORT板CPLD升级通路(66-0040)           "
+
+msgid "NIC 1 SM_BUS(94-0050)                      "
+msgstr "网卡1 SM_BUS(94-0050)                      "
+
+msgid "NIC 2 SM_BUS(95-0050)                      "
+msgstr "网卡2 SM_BUS(95-0050)                      "
+
+msgid "NIC 3 SM_BUS(96-0050)                      "
+msgstr "网卡3 SM_BUS(96-0050)                      "
+
+msgid "NIC 4 SM_BUS(97-0050)                      "
+msgstr "网卡4 SM_BUS(97-0050)                      "
+
+msgid "FCB board E2PROM(92-0056)                      "
+msgstr "FCB板 E2PROM(92-0056)                      "
+
+msgid "FCB board TMP275(93-0048)                      "
+msgstr "FCB板 TMP275(93-0048)                      "
+
+msgid "FCB board TMP275(93-0049)                      "
+msgstr "FCB板 TMP275(93-0049)                      "
+
+msgid "MAC board CLOCK(102-0009)                      "
+msgstr "MAC板 CLOCK(102-0009)                      "
+
+msgid "MAC board CLOCK E2PROM(102-0050)              "
+msgstr "MAC板 CLOCK E2PROM(102-0050)              " 
+
+msgid "PCIE board EEPROM(24-0054)                     "
+msgstr "PCIE板 EEPROM(24-0054)                     "
+
+msgid "PCIE PORT board CPLD(66-0031)                   "
+msgstr "PCIE PORT板CPLD(66-0031)                   "

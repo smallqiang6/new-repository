@@ -1,0 +1,12 @@
+[Unit]
+Description=Monitor Bios post code service
+Requires=init-early.service
+After=init-early.service
+ConditionPathExists=!/etc/device/product_capacity/disable/%N
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/bios_post_code_monitor.py
+Restart=always
+
+[Install]
+WantedBy=bmc.target

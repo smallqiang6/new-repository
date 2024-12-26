@@ -1,0 +1,1982 @@
+From c19a8f458828490724728c87b38ed8b8210a405b Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Fri, 12 Apr 2024 10:22:16 +0800
+Subject: [PATCH 2/9] Summary:(uboot add ast2600)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202404109152
+BUGID: NA
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: If5feb7c2bab6ba6cc48b868f7b1e00f9a869d101
+---
+ arch/arm/dts/Makefile                        |    3 +
+ arch/arm/dts/wb_ast2600.dts                  |  315 +++++
+ arch/arm/mach-aspeed/ast2600/Kconfig         |    8 +
+ board/wb-obmc/ast/Makefile                   |    2 +-
+ board/wb-obmc/ast/{ast-g5.h => ast-common.h} |    6 +-
+ board/wb-obmc/ast/ast-g5.c                   |    9 +-
+ board/wb-obmc/ast/ast-g6.c                   | 1224 ++++++++++++++++--
+ configs/wb-ast2600_defconfig                 |   96 ++
+ drivers/i2c/Kconfig                          |    2 +-
+ drivers/i2c/ast_i2c.c                        |   19 +-
+ drivers/watchdog/ast_wdt.c                   |   12 +-
+ include/configs/facebook_common_v0.h         |    2 +-
+ include/configs/wb_ast2600.h                 |   47 +
+ 13 files changed, 1648 insertions(+), 97 deletions(-)
+ create mode 100644 arch/arm/dts/wb_ast2600.dts
+ rename board/wb-obmc/ast/{ast-g5.h => ast-common.h} (93%)
+ create mode 100644 configs/wb-ast2600_defconfig
+ create mode 100644 include/configs/wb_ast2600.h
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index ba48d9e3..6214fb39 100755
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -732,6 +732,9 @@ dtb-$(CONFIG_TARGET_FB_AST_GEN_5) += \
+ dtb-$(CONFIG_TARGET_WB_AST_GEN_5) += \
+ 	wb_ast2500.dtb
+ 
++dtb-$(CONFIG_TARGET_WB_AST_GEN_6) += \
++	wb_ast2600.dtb
++
+ targets += $(dtb-y)
+ 
+ # Add any required device tree compiler flags here
+diff --git a/arch/arm/dts/wb_ast2600.dts b/arch/arm/dts/wb_ast2600.dts
+new file mode 100644
+index 00000000..d112dd52
+--- /dev/null
++++ b/arch/arm/dts/wb_ast2600.dts
+@@ -0,0 +1,315 @@
++/dts-v1/;
++
++#include "ast2600-u-boot.dtsi"
++
++/ {
++        model = "AST2600";
++        compatible = "aspeed,ast2600-evb", "aspeed,ast2600";
++
++	memory {
++		device_type = "memory";
++		reg = <0x80000000 0x40000000>;
++	};
++
++	chosen {
++		stdout-path = &uart5;
++	};
++
++	aliases {
++		mmc0 = &emmc_slot0;
++		mmc1 = &sdhci_slot0;
++		mmc2 = &sdhci_slot1;
++		spi0 = &fmc;
++		spi1 = &spi1;
++		spi2 = &spi2;
++		ethernet0 = &mac0;
++		ethernet1 = &mac1;
++		ethernet2 = &mac2;
++		ethernet3 = &mac3;
++	};
++
++	cpus {
++		cpu@0 {
++			clock-frequency = <800000000>;
++		};
++		cpu@1 {
++			clock-frequency = <800000000>;
++		};
++	};
++};
++
++&uart5 {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&sdrammc {
++	clock-frequency = <400000000>;
++};
++
++&wdt1 {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&wdt2 {
++	status = "disabled";
++};
++
++&wdt3 {
++	status = "disabled";
++};
++
++&mdio {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <	&pinctrl_mdio1_default &pinctrl_mdio2_default
++			&pinctrl_mdio3_default &pinctrl_mdio4_default>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	ethphy0: ethernet-phy@0 {
++		reg = <0>;
++	};
++
++	ethphy1: ethernet-phy@1 {
++		reg = <0>;
++	};
++
++	ethphy2: ethernet-phy@2 {
++		reg = <0>;
++	};
++
++	ethphy3: ethernet-phy@3 {
++		reg = <0>;
++	};
++};
++
++&mac0 {
++	status = "disabled";
++};
++
++&mac1 {
++	status = "disabled";
++};
++
++&mac2 {
++	status = "okay";
++	phy-mode = "rgmii";
++	phy-handle = <&ethphy0>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_rgmii3_default &pinctrl_mac3link_default>;	
++};
++
++&mac3 {
++	status = "disabled";
++};
++
++&fmc {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_fmcquad_default>;
++
++	flash@0 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++
++	flash@1 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++
++	flash@2 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++};
++
++&spi1 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_spi1_default &pinctrl_spi1abr_default
++			&pinctrl_spi1cs1_default &pinctrl_spi1wp_default
++			&pinctrl_spi1wp_default &pinctrl_spi1quad_default>;
++
++	flash@0 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++
++	flash@1 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++};
++
++&spi2 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_spi2_default &pinctrl_spi2cs1_default
++			&pinctrl_spi2cs2_default &pinctrl_spi2quad_default>;
++
++	flash@0 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++
++	flash@1 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++
++	flash@2 {
++		compatible = "spi-flash", "sst,w25q256";
++		status = "okay";
++		spi-max-frequency = <50000000>;
++		spi-tx-bus-width = <4>;
++		spi-rx-bus-width = <4>;
++	};
++};
++
++&emmc {
++	u-boot,dm-pre-reloc;
++	timing-phase = <0x000f0097>;
++};
++
++&emmc_slot0 {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++	bus-width = <4>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_emmc_default>;
++	sdhci-drive-type = <1>;
++};
++
++&sdhci {
++	timing-phase = <0x00c6375f>;
++};
++
++&sdhci_slot0 {
++	status = "okay";
++	bus-width = <4>;
++	pwr-gpios = <&gpio0 ASPEED_GPIO(V, 0) GPIO_ACTIVE_HIGH>;
++	pwr-sw-gpios = <&gpio0 ASPEED_GPIO(V, 1) GPIO_ACTIVE_HIGH>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_sd1_default>;
++	sdhci-drive-type = <1>;
++};
++
++&sdhci_slot1 {
++	status = "disabled";
++	bus-width = <4>;
++	pwr-gpios = <&gpio0 ASPEED_GPIO(V, 2) GPIO_ACTIVE_HIGH>;
++	pwr-sw-gpios = <&gpio0 ASPEED_GPIO(V, 3) GPIO_ACTIVE_HIGH>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_sd2_default>;
++	sdhci-drive-type = <1>;
++};
++
++&i2c2 {
++    status = "okay";
++
++    pinctrl-names = "default";
++    pinctrl-0 = <&pinctrl_i2c3_default>;
++};
++
++&i2c4 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c5_default>;
++};
++
++&i2c5 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c6_default>;
++};
++
++&i2c6 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c7_default>;
++};
++
++&i2c7 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c8_default>;
++};
++
++&i2c8 {
++	status = "okay";
++
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_i2c9_default>;
++};
++
++&pcie_bridge1 {
++	status = "okay";
++};
++
++&h2x {
++	status = "okay";
++};
++
++#if 0
++&fsim0 {
++	status = "okay";
++};
++
++&fsim1 {
++	status = "okay";
++};
++#endif
++
++&ehci1 {
++	status = "okay";
++};
++
++&display_port {
++	status = "okay";
++};
++
++&scu {
++	mac2-clk-delay = <0x08 0x04
++			  0x08 0x04
++			  0x08 0x04>;
++};
++
++&hace {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&arcy {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
+diff --git a/arch/arm/mach-aspeed/ast2600/Kconfig b/arch/arm/mach-aspeed/ast2600/Kconfig
+index dd9b6757..a914b1a7 100644
+--- a/arch/arm/mach-aspeed/ast2600/Kconfig
++++ b/arch/arm/mach-aspeed/ast2600/Kconfig
+@@ -66,6 +66,13 @@ config TARGET_FB_AST_GEN_6
+ 	bool "Facebook ast26xx based platform"
+ 	select FB_AST_GEN_6
+ 
++config TARGET_WB_AST_GEN_6
++	bool "WB-AST-GEN-6"
++	depends on ASPEED_AST2600
++	help
++	  WB-AST-GEN-6 is BMC board with AST2600 chip.
++
++
+ endchoice
+ 
+ source "board/aspeed/evb_ast2600/Kconfig"
+@@ -76,5 +83,6 @@ source "board/aspeed/facebook_cloudripper/Kconfig"
+ source "board/aspeed/facebook_elbert/Kconfig"
+ source "board/aspeed/facebook_fuji/Kconfig"
+ source "board/fb-obmc/Kconfig"
++source "board/wb-obmc/Kconfig"
+ 
+ endif
+diff --git a/board/wb-obmc/ast/Makefile b/board/wb-obmc/ast/Makefile
+index a2251668..281bad17 100644
+--- a/board/wb-obmc/ast/Makefile
++++ b/board/wb-obmc/ast/Makefile
+@@ -5,7 +5,7 @@ obj-y += vboot-spl.o flash-spl.o
+ else
+ obj-$(CONFIG_TARGET_WB_AST_GEN_4) += ast-g4.o
+ obj-$(CONFIG_TARGET_WB_AST_GEN_5) += ast-g5.o
+-obj-$(CONFIG_TARGET_WB_AST_GEN_6) += ast-g6.o vboot.o
++obj-$(CONFIG_TARGET_WB_AST_GEN_6) += ast-g6.o
+ endif
+ 
+ ifeq ($(CONFIG_TPM_V2), y)
+diff --git a/board/wb-obmc/ast/ast-g5.h b/board/wb-obmc/ast/ast-common.h
+similarity index 93%
+rename from board/wb-obmc/ast/ast-g5.h
+rename to board/wb-obmc/ast/ast-common.h
+index 5f185b02..3c4f3186 100644
+--- a/board/wb-obmc/ast/ast-g5.h
++++ b/board/wb-obmc/ast/ast-common.h
+@@ -6,8 +6,8 @@
+  * as published by the Free Software Foundation; either version
+  * 2 of the License, or (at your option) any later version.
+  */
+-#ifndef _AST_G5_H
+-#define _AST_G5_H
++#ifndef _AST_COMMON_H
++#define _AST_COMMON_H
+ 
+ #define PRODUCT_INFO_LEN     (64)
+ #define MAC_ADDR_LENGTH      (6)
+@@ -37,4 +37,4 @@ typedef struct dev_info_s {
+     u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
+ } dev_info_t;
+ 
+-#endif/* _AST_G5_H */
++#endif/* _AST_COMMON_H */
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+index 36ca7055..dd87e83b 100644
+--- a/board/wb-obmc/ast/ast-g5.c
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -253,6 +253,7 @@ static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value
+     char *value;
+     u_int32_t length;
+ 
++    length = 0;
+     value = (char *)decode_value->value;
+ 
+     switch (tlv->type) {
+@@ -817,7 +818,11 @@ static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_inf
+ 
+     ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
+ 
+-    uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
++    ret = uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
++    if (ret) {
++        printf("get i2c-%d adapter fail, ret : %d!! \n", tmp_eeprom_list->bus, ret);
++        return ret;
++    }
+     ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
+     if (ret) {
+         ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
+@@ -970,7 +975,7 @@ static void product_name_match(void)
+     dev_info_t *dev_info;
+     unsigned long board_id;
+ 
+-    dev_info =NULL;
++    dev_info = NULL;
+     for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
+         ret = get_product_name(&g_eeprom_list[i], &dev_info);
+         if (ret >= 0) {
+diff --git a/board/wb-obmc/ast/ast-g6.c b/board/wb-obmc/ast/ast-g6.c
+index 94dcbcb6..ad04a74c 100644
+--- a/board/wb-obmc/ast/ast-g6.c
++++ b/board/wb-obmc/ast/ast-g6.c
+@@ -1,108 +1,1164 @@
+ // SPDX-License-Identifier: GPL-2.0+
+ /*
+- * Copyright (c) 2021 Facebook Inc.
++ * Copyright (C) ASPEED Technology Inc.
+  */
+-
+ #include <common.h>
+ #include <asm/io.h>
+-#include <asm/arch/timer.h>
+-#include <linux/bitops.h>
+-#include <linux/err.h>
++#include <environment.h>
++#include <i2c.h>
+ #include <dm/uclass.h>
+-#include "util.h"
++#include <fdt_support.h>
++#include "ast-product.h"
++
++int env_save(void);
++
++#ifdef DEBUG
++#define ast_debug(fmt, args...)	printf(fmt, ##args)
++#else
++#define ast_debug(fmt, args...)
++#endif
++
++#define ENV_PRODUCT_NAME       "productname"
++#define ENV_BOARD_ID           "board_id"
++
++#define ENV_PRODUCT_FLAG_NAME  "productflag"
++#define ENV_CONF_FIT_NAME      "conffitname"
++
++#define ENV_PRODUCT_DEBUG      "productdebug"
+ 
+-DECLARE_GLOBAL_DATA_PTR;
++#define ENV_PRODUCT_FLAG_VAL      "1"
++#define ENV_PRODUCT_NO_FLAG_VAL   "0"
+ 
+-#ifdef CONFIG_FBGC
+-static void system_status_led_init(void)
++#define ENV_PRODUCT_DEBUG_VAL     "debug"
++#define ENV_MAC_ADDR              "ethaddr"
++#define ENV_MAC0_ADDR             "eth0addr"
++#define ENV_MAC1_ADDR             "eth1addr"
++#define ENV_MAC2_ADDR             "eth2addr"
++#define ENV_MAC3_ADDR             "eth3addr"
++#define ENV_ETH_PRIME             "ethprime"
++
++#define PRODUCT_I2C_ADDR     (0x57)
++#define PRODUCT_EEPROM_LEN   (256)
++
++
++#define SCU_BASE	0x1e6e2000
++#define ESPI_BASE	0x1e6ee000
++#define LPC_BASE	0x1e789000
++#define   LPC_HICR5		(LPC_BASE + 0x80)
++#define   LPC_HICR6		(LPC_BASE + 0x84)
++#define   LPC_SNPWADR	(LPC_BASE + 0x90)
++#define   LPC_HICRB		(LPC_BASE + 0x100)
++#define GPIO_BASE	0x1e780000
++
++/* HICR5 Bits */
++#define HICR5_EN_SIOGIO (1 << 31)		/* Enable SIOGIO */
++#define HICR5_EN80HGIO (1 << 30)		/* Enable 80hGIO */
++#define HICR5_SEL80HGIO (0x1f << 24)		/* Select 80hGIO */
++#define SET_SEL80HGIO(x) ((x & 0x1f) << 24)	/* Select 80hGIO Offset */
++#define HICR5_UNKVAL_MASK 0x1FFF0000		/* Bits with unknown values on reset */
++#define HICR5_ENINT_SNP0W (1 << 1)		/* Enable Snooping address 0 */
++#define HICR5_EN_SNP0W (1 << 0)			/* Enable Snooping address 0 */
++
++/* HRCR6 Bits */
++#define HICR6_STR_SNP0W (1 << 0)	/* Interrupt Status Snoop address 0 */
++#define HICR6_STR_SNP1W (1 << 1)	/* Interrupt Status Snoop address 1 */
++
++/* HICRB Bits */
++#define HICRB_EN80HSGIO     (1 << 13)	/* Enable 80hSGIO */
++#define HICRB_ENSIOLDN      (1 << 29)	/* Enable SIOLDN  */
++#define HICRB_ENSIOLPC2AHB  (1 << 6)	/* Enable SIO iLPC2AHB write funtion */
++
++static void __maybe_unused port80h_snoop_init(void)
+ {
+-	/* GPIO088: GPIO_U/V/W/X Data Value Register
+-	 * 31:24 Port GPIOX[7:0] data register
+-	 * 23:16 Port GPIOW[7:0] data register
+-	 * 15:8 Port GPIOV[7:0] data register
+-	 * 7:0 Port GPIOU[7:0] data register
+-	 */
+-	u32 value = readl(0x1e780088);
+-	/* GPIO08C: GPIO_U/V/W/X Direction Value Register
+-	 * 31:24 Port GPIOX[7:0] direction control
+-	 * 0: Select input mode 1: Select output mode
+-	 * 23:16 Port GPIOW[7:0] direction control
+-	 * 0: Select input mode 1: Select output mode
+-	 * 15:8 Port GPIOV[7:0] direction control
+-	 * 0: Select input mode 1: Select output mode
+-	 * 7:0 Reserved
+-	 * GPIOU is input only
+-	 */
+-	u32 direction = readl(0x1e78008C);
++	u32 value;
++	/* enable port80h snoop and sgpio */
++	/* set lpc snoop #0 to port 0x80 */
++	value = readl(LPC_SNPWADR) & 0xffff0000;
++	writel(value | 0x80, LPC_SNPWADR);
++
++	/* clear interrupt status */
++	value = readl(LPC_HICR6);
++	value |= HICR6_STR_SNP0W | HICR6_STR_SNP1W;
++	writel(value, LPC_HICR6);
++
++	/* enable lpc snoop #0 and SIOGIO */
++	value = readl(LPC_HICR5) & ~(HICR5_UNKVAL_MASK);
++	value |= HICR5_EN_SIOGIO | HICR5_EN_SNP0W;
++	writel(value, LPC_HICR5);
++
++	/* enable port80h snoop on SGPIO */
++	value = readl(LPC_HICRB) | HICRB_EN80HSGIO;
++	writel(value, LPC_HICRB);
++}
++
++static void __maybe_unused sgpio_init(void)
++{
++#define SGPIO_CLK_DIV(N)	((N) << 16)
++#define SGPIO_BYTES(N)		((N) << 6)
++#define SGPIO_ENABLE		1
++#define GPIO554			0x554
++#define SCU_414			0x414 /* Multi-function Pin Control #5 */
++#define SCU_414_SGPM_MASK	GENMASK(27, 24)
+ 
+-	/* GPIOV4: BMC_LED_STATUS_BLUE_EN_R
+-	 * 0: LED OFF 1:LED ON BLUE
+-	 * GPIOV5: BMC_LED_STATUS_YELLOW_EN_R
+-	 * 0: LED ON YELLOW 1:LED OFF
++	u32 value;
++	/* set the sgpio clock to pclk/(2*(5+1)) or ~2 MHz */
++	value = SGPIO_CLK_DIV(256) | SGPIO_BYTES(10) | SGPIO_ENABLE;
++	writel(value, GPIO_BASE + GPIO554);
++	writel(readl(SCU_BASE | SCU_414) | SCU_414_SGPM_MASK,
++		SCU_BASE | SCU_414);
++}
++
++static void __maybe_unused espi_init(void)
++{
++	u32 reg;
++
++	/*
++	 * Aspeed STRONGLY NOT recommend to use eSPI early init.
++	 *
++	 * This eSPI early init sequence merely set OOB_FREE. It
++	 * is NOT able to actually handle OOB requests from PCH.
++	 *
++	 * During the power on stage, PCH keep waiting OOB_FREE
++	 * to continue its booting. In general, OOB_FREE is set
++	 * when BMC firmware is ready. That is, the eSPI kernel
++	 * driver is mounted and ready to serve eSPI. However,
++	 * it means that PCH must wait until BMC kernel ready.
++	 *
++	 * For customers that request PCH booting as soon as
++	 * possible. You may use this early init to set OOB_FREE
++	 * to prevent PCH from blocking by OOB_FREE before BMC
++	 * kernel ready.
++	 *
++	 * If you are not sure what you are doing, DO NOT use it.
+ 	 */
+-	direction |= 0x3000; // set GPIOV4 & GPIOV5 direction output
+-	value &= 0xFFFFCFFF; // set GPIOV4 & GPIOV5 value 0
+-	writel(direction, 0x1e78008C);
+-	writel(value, 0x1e780088);
++	reg = readl(ESPI_BASE + 0x000);
++	reg |= 0xef;
++	writel(reg, ESPI_BASE + 0x000);
++
++	writel(0x0, ESPI_BASE + 0x110);
++	writel(0x0, ESPI_BASE + 0x114);
++
++	reg = readl(ESPI_BASE + 0x00c);
++	reg |= 0x80000000;
++	writel(reg, ESPI_BASE + 0x00c);
++
++	writel(0xffffffff, ESPI_BASE + 0x094);
++	writel(0x1, ESPI_BASE + 0x100);
++	writel(0x1, ESPI_BASE + 0x120);
++
++	reg = readl(ESPI_BASE + 0x080);
++	reg |= 0x50;
++	writel(reg, ESPI_BASE + 0x080);
++
++	reg = readl(ESPI_BASE + 0x000);
++	reg |= 0x10;
++	writel(reg, ESPI_BASE + 0x000);
+ }
+ 
+-#endif /* CONFIG_FBGC */
++/**************************wedge eeprom*****************************/
++#define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
++#define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
++#define FBW_EEPROM_F_LOCAL_MAC_OFFSET (149)
++
++static dev_info_t *g_dev_info = NULL;
++
++/**
++ *  The TLV Types.
++ *
++ *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
++ */
++#define TLV_CODE_PRODUCT_NAME   0x21
++#define TLV_CODE_PART_NUMBER    0x22
++#define TLV_CODE_SERIAL_NUMBER  0x23
++#define TLV_CODE_MAC_BASE       0x24
++#define TLV_CODE_MANUF_DATE     0x25
++#define TLV_CODE_DEVICE_VERSION 0x26
++#define TLV_CODE_LABEL_REVISION 0x27
++#define TLV_CODE_PLATFORM_NAME  0x28
++#define TLV_CODE_ONIE_VERSION   0x29
++#define TLV_CODE_MAC_SIZE       0x2A
++#define TLV_CODE_MANUF_NAME     0x2B
++#define TLV_CODE_MANUF_COUNTRY  0x2C
++#define TLV_CODE_VENDOR_NAME    0x2D
++#define TLV_CODE_DIAG_VERSION   0x2E
++#define TLV_CODE_SERVICE_TAG    0x2F
++#define TLV_CODE_VENDOR_EXT     0xFD
++#define TLV_CODE_CRC_32         0xFE
++
++#define TLV_CODE_EXT_NO_CMD     0
++#define TLV_CODE_EXT_CARD_ID    0x1
++
++
++// Header Field Constants
++#define TLV_INFO_ID_STRING      "TlvInfo"
++#define TLV_INFO_VERSION        0x01
++#define TLV_TOTAL_LEN_MAX       (XXXXXXXX - sizeof(tlvinfo_header_t))
+ 
+-#ifdef CONFIG_ELBERTVBOOT
+-extern void configureBcm53134(void);
++struct __attribute__ ((__packed__)) tlvinfo_header_s {
++    char    signature[8];   /* 0x00 - 0x07 EEPROM Tag "TlvInfo" */
++    u_int8_t      version;  /* 0x08        Structure version */
++    u_int16_t     totallen; /* 0x09 - 0x0A Length of all data which follows */
++};
++typedef struct tlvinfo_header_s tlvinfo_header_t;
++
++/*
++ * TlvInfo TLV: Layout of a TLV field
++ */
++struct __attribute__ ((__packed__)) tlvinfo_tlv_s {
++    u_int8_t  type;
++    u_int8_t  length;
++    u_int8_t  value[0];
++};
++typedef struct tlvinfo_tlv_s tlvinfo_tlv_t;
++
++typedef struct tlv_decode_value_s {
++    u_int8_t value[PRODUCT_INFO_LEN];
++    u_int32_t length;
++} tlv_decode_value_t;
++
++#ifndef BIT
++#define BIT(nr)		(1 << (nr))
+ #endif
++#define PCA9641_ADDR           0x10
++#define PCA9641_ID             0x00
++#define PCA9641_ID_MAGIC       0x38
++#define PCA9641_CONTROL        0x01
++#define PCA9641_STATUS         0x02
++#define PCA9641_TIME           0x03
++#define PCA9641_CTL_LOCK_REQ           BIT(0)
++#define PCA9641_CTL_LOCK_GRANT         BIT(1)
++#define PCA9641_CTL_BUS_CONNECT        BIT(2)
++#define PCA9641_CTL_BUS_INIT           BIT(3)
++#define PCA9641_CTL_SMBUS_SWRST        BIT(4)
++#define PCA9641_CTL_IDLE_TIMER_DIS     BIT(5)
++#define PCA9641_CTL_SMBUS_DIS          BIT(6)
++#define PCA9641_CTL_PRIORITY           BIT(7)
++#define PCA9641_STS_OTHER_LOCK         BIT(0)
++#define PCA9641_STS_BUS_INIT_FAIL      BIT(1)
++#define PCA9641_STS_BUS_HUNG           BIT(2)
++#define PCA9641_STS_MBOX_EMPTY         BIT(3)
++#define PCA9641_STS_MBOX_FULL          BIT(4)
++#define PCA9641_STS_TEST_INT           BIT(5)
++#define PCA9641_STS_SCL_IO             BIT(6)
++#define PCA9641_STS_SDA_IO             BIT(7)
++
++#define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
++                       !((y) & PCA9641_STS_OTHER_LOCK))
++#define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
++#define other_lock(x)  ((x) & PCA9641_STS_OTHER_LOCK)
++
++#define PCA9641_TRY_TIMES              1000
++#define PCA9641_DELAY_TIME             2 /* ms */
+ 
+-int board_init(void)
++#define PCA9641_DETECT_TRY_TIMES       3
++#define PCA9641_DETECT_DELAY_TIME      100 /* ms */
++
++u8 eeprom[PRODUCT_EEPROM_LEN];
++
++typedef struct product_map_s {
++    char productname[PRODUCT_INFO_LEN];
++    char fitname[PRODUCT_INFO_LEN];
++} product_map_t;
++
++product_map_t fit_product_list[] = {
++    {"NONE", "none"},
++};
++
++#define PRODUCT_LIST_LEN (sizeof(fit_product_list) / sizeof(fit_product_list[0]))
++
++static inline int _a2v(const uint8_t *a)
+ {
+-	struct udevice *dev;
+-	int i;
+-	int ret;
+-	u64 rev_id;
+-	u32 tmp_val;
++  uint8_t v = *a;
+ 
+-	/* disable address remapping for A1 to prevent secure boot reboot failure */
+-	rev_id = readl(ASPEED_REVISION_ID0);
+-	rev_id = ((u64)readl(ASPEED_REVISION_ID1) << 32) | rev_id;
++  if ('0' <= v && v <= '9') {
++    return v - '0';
++  }
++  if ('a' <= v && v <= 'f') {
++    return v - 'a' + 10;
++  }
++  if ('A' <= v && v <= 'F') {
++    return v - 'A' + 10;
++  }
++  return -1;
++}
+ 
+-	if (rev_id == 0x0501030305010303 || rev_id == 0x0501020305010203) {
+-		if ((readl(ASPEED_SB_STS) & BIT(6))) {
+-			tmp_val = readl(0x1e60008c) & (~BIT(0));
+-			writel(0xaeed1a03, 0x1e600000);
+-			writel(tmp_val, 0x1e60008c);
+-			writel(0x1, 0x1e600000);
+-		}
+-	}
+ 
+-	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
++static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
++{
++    return ((tlv->type != 0x00) && (tlv->type != 0xFF));
++}
+ 
+-#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG)
+-	dual_boot_watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
+-#else
+-	watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++static inline int is_valid_tlvinfo_header(tlvinfo_header_t *hdr)
++{
++    int max_size = PRODUCT_EEPROM_LEN;
++    return((strcmp(hdr->signature, TLV_INFO_ID_STRING) == 0) &&
++	   (hdr->version == TLV_INFO_VERSION) &&
++	   (be16_to_cpu(hdr->totallen) <= max_size) );
++}
++
++/* Strip out Spaces and carriage returns */
++static void delete_space_lf_cr(char *str)
++{
++    int i, j;
++    int len;
++
++    if (str == NULL) {
++        ast_debug( "param error, str is NULL\n");
++        return;
++    }
++    /* Remove all Spaces from the configuration line */
++    len = strlen(str);
++    for (i = 0; i < len; i++) {
++        if (str[i] == '\r' || str[i] == '\n' || str[i] == ' ') {
++            for (j = i; j < len - 1; j++) {
++                str[j] = str[j + 1];
++            }
++            str[j] = '\0';
++            len--;
++            i--;
++        }
++    }
++}
++
++static void calc_bmc_mac(u_int8_t *mac_addr)
++{
++    int i, tmp_val;
++
++    tmp_val = mac_addr[MAC_ADDR_LENGTH - 1] + 2;
++    if (tmp_val > 0xff) {
++        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
++        for (i = 1; i < MAC_ADDR_LENGTH; i++) {
++            if (mac_addr[MAC_ADDR_LENGTH - i - 1] == 0xff) {
++                mac_addr[MAC_ADDR_LENGTH - i - 1] = 0;
++            } else {
++                mac_addr[MAC_ADDR_LENGTH - i - 1]++;
++                break;
++            }
++        }
++    } else {
++        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
++    }
++    return;
++}
++
++static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    length = 0;
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_PRODUCT_NAME:
++    case TLV_CODE_MAC_BASE:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++        break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        return -1;
++    }
++
++    decode_value->length = length;
++    return 0;
++}
++
++static void ext_cmd_decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    length = 0;
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_EXT_CARD_ID:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++    	break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        break;
++    }
++
++    decode_value->length = length;
++}
++
++static int is_checksum_valid(u_int8_t *eeprom)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t *eeprom_crc;
++    unsigned int calc_crc;
++    unsigned int stored_crc;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Is the eeprom header valid?
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++	    return -1;
++    }
++
++    // Is the last TLV a CRC?
++    eeprom_crc = (tlvinfo_tlv_t *) &eeprom[sizeof(tlvinfo_header_t) +
++        be16_to_cpu(eeprom_hdr->totallen) - (sizeof(tlvinfo_tlv_t) + 4)];
++    if ((eeprom_crc->type != TLV_CODE_CRC_32) || (eeprom_crc->length != 4)) {
++	    return -1;
++    }
++
++    // Calculate the checksum
++    calc_crc = crc32(0xffffffffL, (const unsigned char *)eeprom, sizeof(tlvinfo_header_t) +
++		     be16_to_cpu(eeprom_hdr->totallen) - 4);
++    stored_crc = ((eeprom_crc->value[0] << 24) | (eeprom_crc->value[1] << 16) |
++		  (eeprom_crc->value[2] <<  8) | eeprom_crc->value[3]);
++    if (calc_crc != stored_crc) {
++        return -1;
++    }
++
++    return 0;
++}
++
++static int tlvinfo_find_tlv(u_int8_t *eeprom, u_int8_t tcode, int *eeprom_index)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t    *eeprom_tlv;
++    int eeprom_end;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    *eeprom_index = sizeof(tlvinfo_header_t);
++    eeprom_end = sizeof(tlvinfo_header_t) + be16_to_cpu(eeprom_hdr->totallen);
++    while (*eeprom_index < eeprom_end) {
++	    eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[*eeprom_index];
++	    if (!is_valid_tlv(eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (eeprom_tlv->type == tcode) {
++	        return 0;
++	    }
++
++	    *eeprom_index += sizeof(tlvinfo_tlv_t) + eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_find_tlv_ext(tlvinfo_tlv_t *ext_eeprom, u_int8_t extcode, int *ext_eeprom_index)
++{
++    tlvinfo_tlv_t    *ext_eeprom_tlv;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    while (*ext_eeprom_index < ext_eeprom->length) {
++	    ext_eeprom_tlv = (tlvinfo_tlv_t *) &(ext_eeprom->value)[*ext_eeprom_index];
++	    if (!is_valid_tlv(ext_eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (ext_eeprom_tlv->type == extcode) {
++	        return 0;
++	    }
++
++	    *ext_eeprom_index += sizeof(tlvinfo_tlv_t) + ext_eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_decode_tlv(u_int8_t *eeprom, u_int8_t tcode, u_int8_t extcode, tlv_decode_value_t *decode_value)
++{
++    int eeprom_index = 0;
++    int ext_eeprom_index = 0;
++    tlvinfo_tlv_t *eeprom_tlv;
++    tlvinfo_tlv_t *ext_eeprom_tlv;
++
++    if (tcode == TLV_CODE_VENDOR_EXT) {
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            if (tlvinfo_find_tlv_ext(eeprom_tlv, extcode, &ext_eeprom_index) == 0) {
++                ext_eeprom_tlv = (tlvinfo_tlv_t *) &((eeprom_tlv->value)[ext_eeprom_index]);
++                ext_cmd_decode_tlv_value(ext_eeprom_tlv, decode_value);
++                return 0;
++            }
++            return 0;
++        }
++    } else {
++        // Find the TLV and then decode it
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            return decode_tlv_value(eeprom_tlv, decode_value);
++        }
++    }
++
++    return -1;
++}
++
++static int get_product_name_from_wedge_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_PRODUCT_NAME_OFFSET];
++
++    if (p_size < FBW_EEPROM_F_PRODUCT_NAME_LEN) {
++        ast_debug("p_size: %d, is less than wedge eeprom product name length: %d\n",
++            p_size, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++        return -1;
++    }
++
++    memcpy(product, cur, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++    delete_space_lf_cr(product);
++    return 0;
++}
++#if 0
++static int get_product_name_from_tlv_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_PRODUCT_NAME, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        printf("No found Product Name\n");
++        return -1;
++    }
++
++    if (p_size >= decode_value.length) {
++        memcpy(product, decode_value.value, decode_value.length);
++    } else {
++        memcpy(product, decode_value.value, p_size);
++    }
++
++    return 0;
++}
+ #endif
+ 
+-	/*
+-	 * Loop over all MISC uclass drivers to call the comphy code
+-	 * and init all CP110 devices enabled in the DT
+-	 */
+-	i = 0;
+-	while (1) {
+-		/* Call the comphy code via the MISC uclass driver */
+-		ret = uclass_get_device(UCLASS_MISC, i++, &dev);
+-
+-		/* We're done, once no further CP110 device is found */
+-		if (ret)
+-			break;
+-	}
+-
+-	vboot_check_enforce();
+-
+-#ifdef CONFIG_FBGC
+-	system_status_led_init();
+-#endif /* CONFIG_FBGC */
+-
+-#ifdef CONFIG_ELBERVBOOT
+-	configureBcm53134();
+-#endif /* ELBERT specific */
+-	return 0;
++static int get_product_id_from_tlv_eeprom(u_int8_t *eeprom, unsigned long *product_id)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++    int i;
++    unsigned long tmp_product_id = 0;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_VENDOR_EXT, TLV_CODE_EXT_CARD_ID, &decode_value);
++    if (ret != 0) {
++        printf("No found Product ID\n");
++        return -1;
++    }
++
++    for (i = 0; i < decode_value.length; i++) {
++        tmp_product_id = tmp_product_id << 8;
++        tmp_product_id |= decode_value.value[i];
++    }
++
++    *product_id = tmp_product_id;
++    ast_debug("tlv_product_id = 0x%lx \n", *product_id);
++
++    return 0;
++}
++
++static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_MAC_BASE, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        ast_debug("No found MAC address\n");
++        return -1;
++    }
++
++    if (decode_value.length != size) {
++        printf("Invalid mac addr size: %d.\n", decode_value.length);
++        return -1;
++    }
++
++    memcpy(buf, decode_value.value, size);
++    return 0;
++}
++
++
++static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    int i, a2v_tmp1, a2v_tmp2;
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_LOCAL_MAC_OFFSET];
++
++    if (size < MAC_ADDR_LENGTH) {
++        ast_debug("mac size buf %d is less than 6\n", size)
++        return -1;
++    }
++
++    for (i = 0; i < MAC_ADDR_LENGTH; i++) {
++        a2v_tmp1 = _a2v(cur);
++        a2v_tmp2 = _a2v(cur + 1);
++        if ((a2v_tmp1 < 0) || (a2v_tmp2 < 0)) {
++            printf("Invalid mac address ASCII, index: %d, value: 0x%02x, 0x%02x\n", i * 2, cur[0], cur[1]);
++            return -1;
++        }
++        *buf = ((a2v_tmp1 << 4) | a2v_tmp2) & 0xff;
++        buf++;
++        cur += 2;
++    }
++    return 0;
++}
++
++static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    unsigned long product_id;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    int mac_addr_valid_flag;
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
++    if (ret < 0) {
++        return -1;
++    }
++
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if (product_id == g_dev_info_list[i].dev_type) {
++            *dev_info = &g_dev_info_list[i];
++            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++            if (mac_addr_valid_flag) {
++                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++            }
++            return 0;
++        }
++    }
++    return -1;
++}
++
++static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    char product[PRODUCT_INFO_LEN];
++    int mac_addr_valid_flag;
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++            if (mac_addr_valid_flag) {
++                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++            }
++            return 0;
++        }
++    }
++    return -1;
++}
++
++static int pca9641_set_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl, reg_sts;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    ret = dm_i2c_read(dev, PCA9641_STATUS, &reg_sts, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    reg_ctl |= PCA9641_CTL_PRIORITY; /* set pca9641 priority */
++    if (BUSOFF(reg_ctl, reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to read pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        if (lock_grant(reg_ctl)) {
++            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++            ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++            if (ret < 0) {
++                ast_debug("Failed to write pca9641: 0x%02x.(busoff, lock_grant)\n", PCA9641_CONTROL);
++                return -1;
++            }
++        } else {
++            return -1;
++        }
++    } else if (lock_grant(reg_ctl)) {
++        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(lock_grant)\n", PCA9641_CONTROL);
++            return -1;
++        }
++    } else if (other_lock(reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(other_lock)\n", PCA9641_CONTROL);
++            return -1;
++        }
++        return -1;
++    }
++
++    return 0;
++}
++
++static int pca9641_detect(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    return 0;
++}
++
++static void pca9641_release_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    reg_ctl = 0;
++    ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to release pca9641: 0x%02x.\n", PCA9641_CONTROL);
++    }
++
++}
++#if 0
++static int get_product_name_match(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    char product[PRODUCT_INFO_LEN];
++
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_tlv_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if ( strcmp(product, g_dev_info_list[i].dev_name ) == 0 ) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            return 0;
++        }
++    }
++
++    return -1;
++}
++#endif
++static int pca9641_get_eeprom(struct udevice *pca9641_dev, struct udevice *e2_dev, int addr)
++{
++    int ret;
++    int i;
++
++    /* detect pca9641, if fail, return */
++    for (i = 0; i < PCA9641_DETECT_TRY_TIMES; i++) {
++        ret = pca9641_detect(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DETECT_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_DETECT_TRY_TIMES) {
++        ast_debug("Failed to detect pca9641.\n");
++        return -1;
++    }
++
++    for (i = 0; i < PCA9641_TRY_TIMES; i++) {
++        ret = pca9641_set_bus(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_TRY_TIMES) {
++        ast_debug("Failed to set pca9641 bus.\n");
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    ret = dm_i2c_read(e2_dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    pca9641_release_bus(pca9641_dev);
++
++    return 0;
++}
++
++static int normal_get_eeprom(struct udevice *dev, int addr)
++{
++    int ret;
++
++    ret = dm_i2c_read(dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        return -1;
++    }
++    return 0;
++}
++
++static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_info)
++{
++    struct udevice *bus, *e2_dev, *pca9641_dev;
++    int ret = -1;
++
++    ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
++
++    ret = uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
++    if (ret) {
++        printf("get i2c-%d adapter fail, ret : %d!! \n", tmp_eeprom_list->bus, ret);
++        return ret;
++    }
++    ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
++    if (ret) {
++        ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++            tmp_eeprom_list->bus, tmp_eeprom_list->addr, ret);
++        return -1;
++    }
++    ast_debug("get eeprom chip success\n");
++
++    if (tmp_eeprom_list->is_pca9641 == IS_PCA9641) {
++        ret = i2c_get_chip(bus, PCA9641_ADDR, 1, &pca9641_dev);
++        if (ret) {
++            ast_debug("get pca9641 chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++                tmp_eeprom_list->bus, PCA9641_ADDR, ret);
++            return -1;
++        }
++        ast_debug("get pca9641 chip success\n");
++        ret = pca9641_get_eeprom(pca9641_dev, e2_dev, tmp_eeprom_list->addr);
++    } else {
++        ret = normal_get_eeprom(e2_dev, tmp_eeprom_list->addr);
++    }
++
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom.\n");
++        return ret;
++    }
++
++    /* wedge eeprom magic */
++    if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
++        ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
++    } else {
++        ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
++    }
++
++    return ret;
++}
++
++static int save_mac_addr(dev_info_t *dev_info, char *env_mac_name)
++{
++    char mac_addr_str[PRODUCT_INFO_LEN];
++    char *p_mac_addr;
++
++    memset(mac_addr_str, 0, sizeof(mac_addr_str));
++    if (dev_info->mac_addr_valid_flag) {
++        snprintf(mac_addr_str, sizeof(mac_addr_str), "%pM", dev_info->mac_addr);
++        p_mac_addr = env_get(env_mac_name);
++        if ((p_mac_addr == NULL) || (strcmp(p_mac_addr, mac_addr_str) != 0)) {
++            env_set(env_mac_name, mac_addr_str);
++            ast_debug("Set %s to flash env...\n", env_mac_name);
++            return 1;
++        }
++    }
++    return 0;
++}
++
++static void save_product_name(dev_info_t *dev_info)
++{
++    u32 len;
++    char fit[PRODUCT_INFO_LEN];
++    char board_id_str[PRODUCT_INFO_LEN];
++    char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
++    int is_save_flag;
++    int i;
++    char *debug_product;
++
++    /* ......productname . conffitname */
++    debug_product = env_get(ENV_PRODUCT_DEBUG);
++    if (debug_product != NULL && (strcmp(debug_product, ENV_PRODUCT_DEBUG_VAL) == 0)) {
++        printf("Debug mode...\n");
++        return;
++    }
++
++    if (dev_info == NULL) {
++        printf("dev_info is NULL, can't get product info.\n");
++        return;
++    }
++
++    is_save_flag = 0;
++    /* productname.. */
++    env_product = env_get(ENV_PRODUCT_NAME);
++    if (env_product == NULL || strcmp(dev_info->dev_name, env_product) != 0) {
++        env_set(ENV_PRODUCT_NAME, dev_info->dev_name);
++        env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_FLAG_VAL);
++        is_save_flag = 1;
++    } else {
++        save_flag = env_get(ENV_PRODUCT_FLAG_NAME);
++        if (strcmp(save_flag, ENV_PRODUCT_FLAG_VAL) == 0) {
++            env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_NO_FLAG_VAL);
++            is_save_flag = 1;
++        }
++    }
++
++    /* conffitname.. */
++    def_fit_name = dev_info->conffit_name;
++    memset(fit, 0, PRODUCT_INFO_LEN);
++    len = (strlen(def_fit_name) >= PRODUCT_INFO_LEN) ? (PRODUCT_INFO_LEN - 1) : strlen(def_fit_name);
++    for (i = 0; i < len; i++) {
++        if (def_fit_name[i] >= 'A' && def_fit_name[i] <= 'Z') {
++            fit[i] = def_fit_name[i] + 32;
++        } else {
++            fit[i] = def_fit_name[i];
++        }
++    }
++    fit_name = env_get(ENV_CONF_FIT_NAME);
++    if (fit_name == NULL || strcmp(fit, fit_name) != 0) {
++        env_set(ENV_CONF_FIT_NAME, fit);
++        is_save_flag = 1;
++    }
++
++    /* board_id */
++    memset(board_id_str, 0, sizeof(board_id_str));
++    snprintf(board_id_str, sizeof(board_id_str), "0x%x", dev_info->dev_type);
++    p_board_id = env_get(ENV_BOARD_ID);
++    if (p_board_id == NULL || strcmp(p_board_id, board_id_str) != 0) {
++        env_set(ENV_BOARD_ID, board_id_str);
++        is_save_flag = 1;
++    }
++
++    /* mac addr */
++    if (save_mac_addr(dev_info, ENV_MAC_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* mac0 addr */
++    if (save_mac_addr(dev_info, ENV_MAC0_ADDR)) {
++        is_save_flag = 1;
++    }
++    /* mac1 addr */
++    if (save_mac_addr(dev_info, ENV_MAC1_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* mac2 addr */
++    if (save_mac_addr(dev_info, ENV_MAC2_ADDR)) {
++        is_save_flag = 1;
++    }
++    /* mac3 addr */
++    if (save_mac_addr(dev_info, ENV_MAC3_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* eth prime */
++    env_eth_prime = env_get(ENV_ETH_PRIME);
++    if (env_eth_prime == NULL || strcmp(dev_info->eth_prime, env_eth_prime) != 0) {
++        env_set(ENV_ETH_PRIME, dev_info->eth_prime);
++        is_save_flag = 1;
++    }
++
++    if (is_save_flag) {
++        ast_debug("save_env\n");
++        env_save();
++    }
++}
++
++static void product_name_match(void)
++{
++    int i;
++    int ret = -1;
++    char *env_board_id;
++    dev_info_t *dev_info;
++    unsigned long board_id;
++
++    dev_info = NULL;
++    for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
++        ret = get_product_name(&g_eeprom_list[i], &dev_info);
++        if (ret >= 0) {
++            ast_debug("match ok, board_id: 0x%x, productname: %s, conffitname: %s\n",
++                dev_info->dev_type, dev_info->dev_name, dev_info->conffit_name);
++            break;
++        }
++    }
++
++    if (ret < 0) {
++        env_board_id = env_get(ENV_BOARD_ID);
++        if (env_board_id == NULL) {
++            printf("Failed to get product from eeprom\nSet default product: %s\n", g_dev_info_list[0].dev_name);
++            /* read board id failed, default load g_dev_info_list[0] */
++            dev_info = &g_dev_info_list[0];
++        } else { /* ENV have board ID */
++            /* board ID match dev_info */
++            board_id = simple_strtoul(env_board_id, NULL, 16);
++            printf("Get board id from env, board_id: 0x%lx\n", board_id);
++            for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++                if (g_dev_info_list[i].dev_type == board_id) {
++                    /* board id match */
++                    dev_info = &g_dev_info_list[i];
++                    break;
++                }
++            }
++        }
++    }
++
++    save_product_name(dev_info);
++    g_dev_info = dev_info;
++    return;
++}
++
++#define FMC_CTRL_BASE   (0x1e620000)
++void set_fmc_wdt_timeout(void)
++{
++    u32 reg;
++
++    reg = readl(FMC_CTRL_BASE + 0x64);
++
++    reg &= 0xfffffffe;
++    writel(reg, FMC_CTRL_BASE + 0x64);
++
++    /* set timeout 300s */
++    writel(0xbb8, FMC_CTRL_BASE + 0x68);
++
++    reg |= 0x1;
++    writel(reg, FMC_CTRL_BASE + 0x64);
++}
++
++#define SCU_DBG_CTRL_2              (0x1e6e20d8)
++#define SCU_DBG_EN_LPC_TO_AHB       (1 << 1)    /* enable lpc bus to ahb bus bridge */
++
++/* enable_lpc2ahp so that X86 can upgrade BMC through lpc */
++static void enable_lpc2ahp(void)
++{
++    u32 value;
++    /* enable lpc bus to ahb bus bridge */
++    value = readl(SCU_DBG_CTRL_2);
++    writel(value & ~(SCU_DBG_EN_LPC_TO_AHB), SCU_DBG_CTRL_2);
++
++    /* enable lpc2ahp rw */
++    value = readl(LPC_HICRB);
++    writel(value & ~(HICRB_ENSIOLDN | HICRB_ENSIOLPC2AHB), LPC_HICRB);
++}
++
++int board_early_init_f(void)
++{
++#if 0
++    port80h_snoop_init();
++    sgpio_init();
++    espi_init();
++#endif
++    set_fmc_wdt_timeout();
++    return 0;
++}
++
++int board_late_init(void)
++{
++    product_name_match();
++    enable_lpc2ahp();
++    return 0;
+ }
+diff --git a/configs/wb-ast2600_defconfig b/configs/wb-ast2600_defconfig
+new file mode 100644
+index 00000000..3d000f5e
+--- /dev/null
++++ b/configs/wb-ast2600_defconfig
+@@ -0,0 +1,96 @@
++CONFIG_ARM=y
++CONFIG_SYS_DCACHE_OFF=y
++CONFIG_ARCH_ASPEED=y
++CONFIG_SYS_TEXT_BASE=0x0
++CONFIG_ASPEED_AST2600=y
++CONFIG_TARGET_WB_AST_GEN_6=y
++CONFIG_SYS_MALLOC_F_LEN=0x800
++CONFIG_ARMV7_BOOT_SEC_DEFAULT=y
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_FIT=y
++CONFIG_USE_BOOTARGS=y
++CONFIG_BOOTARGS="console=ttyS4,115200n8 root=/dev/ram rw"
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="bootm 20140000 || run switchflash"
++CONFIG_SYS_CONSOLE_ENV_OVERWRITE=y
++CONFIG_DISPLAY_BOARDINFO_LATE=y
++CONFIG_ARCH_EARLY_INIT_R=y
++CONFIG_BOARD_EARLY_INIT_F=y
++CONFIG_BOARD_LATE_INIT=y
++CONFIG_HUSH_PARSER=y
++# CONFIG_AUTO_COMPLETE is not set
++CONFIG_SYS_PROMPT="wb-boot=> "
++CONFIG_CMD_MEMTEST=y
++CONFIG_SYS_ALT_MEMTEST=y
++CONFIG_CMD_CLK=y
++CONFIG_CMD_GPIO=y
++CONFIG_CMD_I2C=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_PART=y
++CONFIG_CMD_PCI=y
++CONFIG_CMD_SF=y
++CONFIG_CMD_USB=y
++CONFIG_CMD_DHCP=y
++CONFIG_CMD_MII=y
++CONFIG_CMD_PING=y
++CONFIG_CMD_EXT2=y
++CONFIG_CMD_EXT4=y
++CONFIG_CMD_EXT4_WRITE=y
++CONFIG_CMD_FAT=y
++CONFIG_CMD_FS_GENERIC=y
++CONFIG_CMD_MTDPARTS=y
++CONFIG_DEFAULT_DEVICE_TREE="wb_ast2600"
++CONFIG_SYS_CONFIG_NAME="wb_ast2600"
++CONFIG_ENV_IS_IN_SPI_FLASH=y
++CONFIG_USE_ENV_SPI_BUS=y
++CONFIG_ENV_SPI_BUS=0
++CONFIG_USE_ENV_SPI_CS=y
++CONFIG_ENV_SPI_CS=0
++CONFIG_USE_ENV_SPI_MAX_HZ=y
++CONFIG_ENV_SPI_MAX_HZ=100000000
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_REGMAP=y
++CONFIG_SYSCON=y
++CONFIG_CLK=y
++CONFIG_DM_GPIO=y
++CONFIG_ASPEED_GPIO=y
++CONFIG_DM_I2C=y
++CONFIG_SYS_I2C_ASPEED=y
++CONFIG_MISC=y
++CONFIG_ASPEED_AHBC=y
++CONFIG_ASPEED_H2X=y
++CONFIG_ASPEED_DP=y
++CONFIG_DM_MMC=y
++CONFIG_MMC_SDHCI=y
++CONFIG_MMC_SDHCI_ASPEED=y
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH=y
++CONFIG_SPI_FLASH_GIGADEVICE=y
++CONFIG_SPI_FLASH_ISSI=y
++CONFIG_SPI_FLASH_MACRONIX=y
++CONFIG_SPI_FLASH_SPANSION=y
++CONFIG_SPI_FLASH_STMICRO=y
++CONFIG_SPI_FLASH_WINBOND=y
++CONFIG_PHY_BROADCOM=y
++CONFIG_PHY_REALTEK=y
++CONFIG_DM_ETH=y
++CONFIG_PHY_GIGE=y
++CONFIG_FTGMAC100=y
++CONFIG_MDIO=y
++CONFIG_PCI=y
++CONFIG_DM_PCI=y
++CONFIG_PCIE_ASPEED=y
++CONFIG_PHY=y
++CONFIG_PINCTRL=y
++CONFIG_RAM=y
++CONFIG_DM_SERIAL=y
++CONFIG_SYS_NS16550=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_SYSRESET=y
++CONFIG_USB=y
++CONFIG_DM_USB=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_STORAGE=y
++CONFIG_WDT=y
++CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
+diff --git a/drivers/i2c/Kconfig b/drivers/i2c/Kconfig
+index 2fc00a40..21562402 100644
+--- a/drivers/i2c/Kconfig
++++ b/drivers/i2c/Kconfig
+@@ -122,7 +122,7 @@ config SYS_I2C_DW_ENABLE_STATUS_UNSUPPORTED
+ 
+ config SYS_I2C_ASPEED
+ 	bool "Aspeed I2C Controller"
+-	depends on DM_I2C && ARCH_ASPEED_GOOGLE
++	depends on DM_I2C && ARCH_ASPEED
+ 	help
+ 	  Say yes here to select Aspeed I2C Host Controller. The driver
+ 	  supports AST2500 and AST2400 controllers, but is very limited.
+diff --git a/drivers/i2c/ast_i2c.c b/drivers/i2c/ast_i2c.c
+index 1a629612..cc90dbcb 100644
+--- a/drivers/i2c/ast_i2c.c
++++ b/drivers/i2c/ast_i2c.c
+@@ -12,7 +12,6 @@
+ #include <i2c.h>
+ #include <asm/io.h>
+ #include <asm/arch/scu_ast2500.h>
+-#include <asm/arch/ast-sdk/regs-scu.h>
+ 
+ #include "ast_i2c.h"
+ 
+@@ -21,6 +20,18 @@
+ 
+ #define HIGHSPEED_TTIMEOUT		3
+ 
++#ifndef AST_SCU_BASE
++#define AST_SCU_BASE    (0x1E6E2000) /* SCU Base Address */
++#endif
++
++#ifndef AST_SCU_RESET
++#define AST_SCU_RESET   (0x04)       /* system reset control register */
++#endif
++
++#ifndef SCU_RESET_I2C
++#define SCU_RESET_I2C   (0x1 << 2)
++#endif
++
+ /*
+  * Device private data
+  */
+@@ -105,9 +116,9 @@ static int ast_i2c_ofdata_to_platdata(struct udevice *dev)
+ 
+ static int ast_i2c_probe(struct udevice *dev)
+ {
+-	int ret;
+-
+ 	debug("Enabling I2C%u\n", dev->seq);
++#if defined(CONFIG_ARCH_AST2500)
++	int ret;
+ 	/*
+ 	 * Enable the i2c dev when no pinctrl support
+ 	 * i.e. in SPL
+@@ -122,7 +133,7 @@ static int ast_i2c_probe(struct udevice *dev)
+ 	 * device does not hurt.
+ 	 */
+ 	clrbits_le32(AST_SCU_BASE + AST_SCU_RESET, SCU_RESET_I2C);
+-
++#endif
+ 	ast_i2c_init_bus(dev);
+ 
+ 	return 0;
+diff --git a/drivers/watchdog/ast_wdt.c b/drivers/watchdog/ast_wdt.c
+index 2be4c7a0..08ef5c60 100644
+--- a/drivers/watchdog/ast_wdt.c
++++ b/drivers/watchdog/ast_wdt.c
+@@ -51,6 +51,11 @@ static int ast_wdt_start(struct udevice *dev, u64 timeout_ms, ulong flags)
+ 
+ 	dev_info(dev, "%s set timeout after %uus ", dev->name, timeout_us);
+ 
++	/* fix: ast2600 only support soc reset */
++	if (driver_data == WDT_AST2600) {
++		reset_mode = WDT_CTRL_RESET_SOC;
++	}
++
+ 	clrsetbits_le32(&priv->regs->ctrl,
+ 			WDT_CTRL_EN |
+ 			WDT_CTRL_RESET_MASK << WDT_CTRL_RESET_MODE_SHIFT,
+@@ -69,7 +74,12 @@ static int ast_wdt_start(struct udevice *dev, u64 timeout_ms, ulong flags)
+ 	 * Based on configuration to enable 2ND_BOOT or TRIGGER WDTRST1
+ 	 */
+ 	clrbits_le32(&priv->regs->ctrl, WDT_CTRL_2ND_BOOT | WDT_CTRL_EXT);
+-	wdt_ctrl = WDT_CTRL_EN | WDT_CTRL_RESET | WDT_CTRL_CLK1MHZ;
++	if (driver_data == WDT_AST2600) {
++		wdt_ctrl = WDT_CTRL_EN | WDT_CTRL_RESET;
++	} else {
++		wdt_ctrl = WDT_CTRL_EN | WDT_CTRL_RESET | WDT_CTRL_CLK1MHZ;
++	}
++
+ 	if (priv->wdtrst[2]) {
+ 		dev_info(dev, "; trig pulse width = %d ", priv->wdtrst[2]);
+ 		writel(priv->wdtrst[2], &priv->regs->reset_width);
+diff --git a/include/configs/facebook_common_v0.h b/include/configs/facebook_common_v0.h
+index 0fcf5807..1a5a3be3 100644
+--- a/include/configs/facebook_common_v0.h
++++ b/include/configs/facebook_common_v0.h
+@@ -80,7 +80,7 @@
+ #endif
+ #define CONFIG_ENV_OFFSET        0x80000 /* environment starts here  */
+ #define CONFIG_ENV_ADDR          (CONFIG_SYS_ENV_BASE + CONFIG_ENV_OFFSET)
+-#define CONFIG_ENV_SIZE          0x40000 /* # of bytes of env, 128k */
++#define CONFIG_ENV_SIZE          0x40000 /* # of bytes of env, 256k */
+ #define CONFIG_ENV_SECT_SIZE	 (64 << 10) /* 64 KiB */
+ #define ENV_INITRD_HIGH "initrd_high=a0000000\0"
+ #define CONFIG_EXTRA_ENV_SETTINGS                       \
+diff --git a/include/configs/wb_ast2600.h b/include/configs/wb_ast2600.h
+new file mode 100644
+index 00000000..004754ae
+--- /dev/null
++++ b/include/configs/wb_ast2600.h
+@@ -0,0 +1,47 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (C) ASPEED Technology Inc.
++ */
++
++#ifndef __WB_AST2600_H
++#define __WB_AST2600_H
++
++#include <configs/aspeed-common.h>
++
++#define CONFIG_SYS_MEMTEST_START	(CONFIG_SYS_SDRAM_BASE + 0x300000)
++#define CONFIG_SYS_MEMTEST_END		(CONFIG_SYS_MEMTEST_START + 0x5000000)
++
++#define CONFIG_SYS_UBOOT_BASE		CONFIG_SYS_TEXT_BASE
++
++/* Memory Info */
++#define CONFIG_SYS_LOAD_ADDR		0x83000000
++
++#undef CONFIG_ENV_SIZE
++#define CONFIG_ENV_SIZE			0x40000
++
++#undef CONFIG_ENV_OFFSET
++#define CONFIG_ENV_OFFSET		0x100000
++
++#define CONFIG_AUTOBOOT_PROMPT		"autoboot in %d seconds (stop with 'ctrl + c' key)...\n"
++#define CONFIG_AUTOBOOT_STOP_STR   "\x03"
++#define CONFIG_AUTOBOOT_KEYED
++
++#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG) /* stop fmcwdt2 */
++# define CONFIG_PRECLICOMMAND "echo stop fmcwdt2; mw 1e620064 0; "
++#else /* stop wdt1 */
++# if defined(CONFIG_CMD_VBS)
++#   define CONFIG_PRECLICOMMAND "vbs interrupt; "
++# else
++#   define CONFIG_PRECLICOMMAND "echo stop wdt1; mw 1e78500c 0; "
++# endif
++#endif /* ASPEED_ENABLE_DUAL_BOOT_WATCHDOG */
++
++#undef CONFIG_EXTRA_ENV_SETTINGS
++#define CONFIG_EXTRA_ENV_SETTINGS \
++	"verify=yes\0"	\
++	"switchflash=mw.l 0x1e620068 0x0A 1;mw.l 0x1e620064 0x11 1\0" \
++	""
++
++
++#endif	/* __WB_AST2600_H */
++
+-- 
+2.25.1
+

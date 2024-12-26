@@ -1,0 +1,6434 @@
+From f405b9c5c70b951a37a4369418a664f6ac6627a5 Mon Sep 17 00:00:00 2001
+From: luohao <luohao@ruijie.com.cn>
+Date: Thu, 29 Feb 2024 18:02:28 +0800
+Subject: [PATCH 1/9] uboot base revise
+
+---
+ arch/arm/dts/Makefile                  |    3 +
+ arch/arm/dts/wb_ast2500.dts            |   36 +
+ arch/arm/include/asm/arch-aspeed/vbs.h |    2 +-
+ arch/arm/mach-aspeed/ast2500/Kconfig   |    5 +
+ board/wb-obmc/Kconfig                  |   79 +
+ board/wb-obmc/ast/Kconfig              |   13 +
+ board/wb-obmc/ast/Makefile             |   16 +
+ board/wb-obmc/ast/ast-g4.c             |   84 +
+ board/wb-obmc/ast/ast-g5.c             | 2412 ++++++++++++++++++++++++
+ board/wb-obmc/ast/ast-g5.h             |   40 +
+ board/wb-obmc/ast/ast-g6.c             |  108 ++
+ board/wb-obmc/ast/elbert.c             |  176 ++
+ board/wb-obmc/ast/flash-spl.c          |  425 +++++
+ board/wb-obmc/ast/flash-spl.h          |   31 +
+ board/wb-obmc/ast/tpm-spl.c            |  409 ++++
+ board/wb-obmc/ast/tpm-spl.h            |  104 +
+ board/wb-obmc/ast/tpm2-spl.c           |  446 +++++
+ board/wb-obmc/ast/util.c               |  171 ++
+ board/wb-obmc/ast/util.h               |   18 +
+ board/wb-obmc/ast/vboot-abb.S          |   64 +
+ board/wb-obmc/ast/vboot-spl.c          |  693 +++++++
+ board/wb-obmc/ast/vboot-spl.lds        |  106 ++
+ board/wb-obmc/ast/vboot.c              |  117 ++
+ common/image-fit.c                     |   20 +-
+ common/main.c                          |   12 +-
+ configs/cpo-ast2500_defconfig          |   94 +
+ configs/wb-ast2500_defconfig           |   94 +
+ drivers/clk/aspeed/clk_ast2500.c       |   29 +-
+ drivers/i2c/ast_i2c.c                  |    9 +-
+ drivers/net/phy/phy.c                  |   11 +-
+ include/command.h                      |    2 +-
+ include/configs/cpo_ast2500.h          |   51 +
+ include/configs/facebook_common_v0.h   |   15 +-
+ include/configs/wb_ast2500.h           |   51 +
+ include/image.h                        |    2 +
+ include/phy.h                          |    2 +
+ net/net.c                              |    4 +-
+ 37 files changed, 5926 insertions(+), 28 deletions(-)
+ create mode 100644 arch/arm/dts/wb_ast2500.dts
+ create mode 100644 board/wb-obmc/Kconfig
+ create mode 100644 board/wb-obmc/ast/Kconfig
+ create mode 100644 board/wb-obmc/ast/Makefile
+ create mode 100644 board/wb-obmc/ast/ast-g4.c
+ create mode 100644 board/wb-obmc/ast/ast-g5.c
+ create mode 100644 board/wb-obmc/ast/ast-g5.h
+ create mode 100644 board/wb-obmc/ast/ast-g6.c
+ create mode 100644 board/wb-obmc/ast/elbert.c
+ create mode 100644 board/wb-obmc/ast/flash-spl.c
+ create mode 100644 board/wb-obmc/ast/flash-spl.h
+ create mode 100644 board/wb-obmc/ast/tpm-spl.c
+ create mode 100644 board/wb-obmc/ast/tpm-spl.h
+ create mode 100644 board/wb-obmc/ast/tpm2-spl.c
+ create mode 100644 board/wb-obmc/ast/util.c
+ create mode 100644 board/wb-obmc/ast/util.h
+ create mode 100644 board/wb-obmc/ast/vboot-abb.S
+ create mode 100644 board/wb-obmc/ast/vboot-spl.c
+ create mode 100644 board/wb-obmc/ast/vboot-spl.lds
+ create mode 100644 board/wb-obmc/ast/vboot.c
+ create mode 100644 configs/cpo-ast2500_defconfig
+ create mode 100644 configs/wb-ast2500_defconfig
+ create mode 100644 include/configs/cpo_ast2500.h
+ create mode 100644 include/configs/wb_ast2500.h
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index fc02fcd9..ba48d9e3 100755
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -729,6 +729,9 @@ dtb-$(CONFIG_TARGET_FB_AST_GEN_5) += \
+ 	fby2.dtb \
+ 	fby3.dtb
+ 
++dtb-$(CONFIG_TARGET_WB_AST_GEN_5) += \
++	wb_ast2500.dtb
++
+ targets += $(dtb-y)
+ 
+ # Add any required device tree compiler flags here
+diff --git a/arch/arm/dts/wb_ast2500.dts b/arch/arm/dts/wb_ast2500.dts
+new file mode 100644
+index 00000000..258cf8bf
+--- /dev/null
++++ b/arch/arm/dts/wb_ast2500.dts
+@@ -0,0 +1,36 @@
++/dts-v1/;
++
++#include "ast2500-fboss.dtsi"
++/ {
++	aliases {
++		eth0 = &mac0;
++		eth1 = &mac1;
++	};
++};
++
++&mac0 {
++	status = "okay";
++	phy-mode = "NC-SI";
++	use-ncsi;
++	pinctrl-names = "default";
++	pinctrl-0 = <&pinctrl_rmii1_default>;
++};
++
++&mac1 {
++    status = "okay";
++    phy-mode = "rgmii";
++    pinctrl-names = "default";
++    pinctrl-0 = <&pinctrl_mac2link_default &pinctrl_mdio2_default>;
++    fixed-link {
++        speed = <1000>;
++        full-duplex;
++    };
++};
++
++&i2c2 {
++  status = "okay";
++};
++
++&i2c13 {
++  status = "okay";
++};
+diff --git a/arch/arm/include/asm/arch-aspeed/vbs.h b/arch/arm/include/asm/arch-aspeed/vbs.h
+index 44e8c332..6f468758 100644
+--- a/arch/arm/include/asm/arch-aspeed/vbs.h
++++ b/arch/arm/include/asm/arch-aspeed/vbs.h
+@@ -8,7 +8,7 @@
+ #define _VBS_H_
+ 
+ /* Location in SRAM used for verified boot content/flags. */
+-#if defined(CONFIG_TARGET_FB_AST_GEN_5)
++#if defined(CONFIG_TARGET_FB_AST_GEN_5) || defined(CONFIG_TARGET_WB_AST_GEN_5)
+ #define AST_SRAM_VBS_BASE   0x1E720200
+ #elif defined(CONFIG_TARGET_FB_AST_GEN_6)
+ #define AST_SRAM_VBS_BASE CONFIG_SYS_INIT_SP_ADDR
+diff --git a/arch/arm/mach-aspeed/ast2500/Kconfig b/arch/arm/mach-aspeed/ast2500/Kconfig
+index 2a7ea9d0..5634b904 100644
+--- a/arch/arm/mach-aspeed/ast2500/Kconfig
++++ b/arch/arm/mach-aspeed/ast2500/Kconfig
+@@ -20,8 +20,13 @@ config TARGET_FB_AST_GEN_5
+ 	bool "Facebook ast25xx based platform"
+ 	select ASPEED_GEN_5
+ 
++config TARGET_WB_AST_GEN_5
++	bool "Whitebox ast25xx based platform"
++	select ASPEED_GEN_5
++
+ endchoice
+ source "board/aspeed/evb_ast2500/Kconfig"
+ source "board/fb-obmc/Kconfig"
++source "board/wb-obmc/Kconfig"
+ 
+ endif
+diff --git a/board/wb-obmc/Kconfig b/board/wb-obmc/Kconfig
+new file mode 100644
+index 00000000..0074e4e3
+--- /dev/null
++++ b/board/wb-obmc/Kconfig
+@@ -0,0 +1,79 @@
++config ASPEED_TPM
++	bool "TPM based feature"
++	default n
++	select TPM
++	depends on SPL
++	help
++		Enable TPM based feature:
++		measurement and rollback protection
++
++config ASPEED_TPM_LOCK
++	bool "lock the TPM"
++	default y
++	depends on ASPEED_TPM
++	help
++		Disable the modify of NVRAM to protect user from modifying
++		the rollback protection information
++		TPM1.2 platform disable physical presence command
++		TPM2.0 platform disable the platform hierarchy
++
++config ASPEED_RECOVERY_BUILD
++	bool "Build a recovery environment"
++	default n
++	depends on SPL
++
++config PFR_SUPPORT
++	bool "support Intel FPR"
++	default n
++
++config FBOBMC_IMG_LAYOUT_VER
++	int "fb-obmc image layout version"
++	default 0
++	range 0 1
++
++config ASPEED_WRITE_DEFAULT_ENV
++	bool "Enable write default environment"
++	default n
++
++config QEMU_BUILD
++	bool "build for QEMU test"
++	default n
++
++config QEMU_VBOOT
++	bool "build for QEMU VBoot test machine"
++	select QEMU_BUILD
++	default n
++
++config ASPEED_ENABLE_DUAL_BOOT_WATCHDOG
++	bool "enable dual boot feature"
++	default n
++	help
++		Enable this will override CONFIG_ASPEED_ENABLE_WATCHDOG
++		use dual boot dedicated watchdog to protect booting up
++		on AST26xx platform it is FMCWDT2
++		on AST24xx and AST25xx platform we select wdt2
++		so please make sure configuring wdt2 with boot2nd in dts
++		&wdt2 {
++			status = "okay";
++			boot2nd = <1>;
++		};
++
++if SPL
++
++config SYS_TEXT_BASE
++	depends on !QEMU_VBOOT && (TARGET_WB_AST_GEN_5 || TARGET_WB_AST_GEN_6)
++	default 0x20015000 if ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 0)
++	default 0x28084000 if !ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 0)
++	default 0x20040000 if ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 1)
++	default 0x28104000 if !ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 1)
++
++config SYS_TEXT_BASE
++	depends on QEMU_VBOOT && (TARGET_WB_AST_GEN_5 || TARGET_WB_AST_GEN_6)
++	default 0x40015000 if ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 0)
++	default 0x48084000 if !ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 0)
++	default 0x40040000 if ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 1)
++	default 0x48104000 if !ASPEED_RECOVERY_BUILD && (FBOBMC_IMG_LAYOUT_VER = 1)
++
++endif
++
++source "board/wb-obmc/ast/Kconfig"
+diff --git a/board/wb-obmc/ast/Kconfig b/board/wb-obmc/ast/Kconfig
+new file mode 100644
+index 00000000..484c98e4
+--- /dev/null
++++ b/board/wb-obmc/ast/Kconfig
+@@ -0,0 +1,13 @@
++if TARGET_WB_AST_GEN_4 || TARGET_WB_AST_GEN_5 || TARGET_WB_AST_GEN_6
++config SYS_BOARD
++	string "board name"
++	default "ast"
++
++config SYS_VENDOR
++	string "board vendor"
++	default "wb-obmc"
++
++config SYS_CONFIG_NAME
++	string "board configure name"
++	default ""
++endif
+diff --git a/board/wb-obmc/ast/Makefile b/board/wb-obmc/ast/Makefile
+new file mode 100644
+index 00000000..a2251668
+--- /dev/null
++++ b/board/wb-obmc/ast/Makefile
+@@ -0,0 +1,16 @@
++obj-$(CONFIG_ELBERTVBOOT) += elbert.o 
++obj-$(CONFIG_SPL) += vboot-abb.o
++ifeq ($(CONFIG_SPL_BUILD), y)
++obj-y += vboot-spl.o flash-spl.o
++else
++obj-$(CONFIG_TARGET_WB_AST_GEN_4) += ast-g4.o
++obj-$(CONFIG_TARGET_WB_AST_GEN_5) += ast-g5.o
++obj-$(CONFIG_TARGET_WB_AST_GEN_6) += ast-g6.o vboot.o
++endif
++
++ifeq ($(CONFIG_TPM_V2), y)
++obj-$(CONFIG_ASPEED_TPM) += tpm2-spl.o
++else
++obj-$(CONFIG_ASPEED_TPM) += tpm-spl.o
++endif
++obj-y += util.o
+diff --git a/board/wb-obmc/ast/ast-g4.c b/board/wb-obmc/ast/ast-g4.c
+new file mode 100644
+index 00000000..8249fdd2
+--- /dev/null
++++ b/board/wb-obmc/ast/ast-g4.c
+@@ -0,0 +1,84 @@
++/*
++ * (C) Copyright 2002 Ryan Chen
++ * Copyright 2016 IBM Corporation
++ * Copyright 2021 Facebook Corportation
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <common.h>
++#include <netdev.h>
++
++#include <asm/arch/platform.h>
++#include <asm/io.h>
++#include "util.h"
++
++#define HW_VERSION_BASE 0x1e6e207c
++
++DECLARE_GLOBAL_DATA_PTR;
++
++int board_init(void)
++{
++	unsigned long reg;
++
++	/* Flash Controller */
++#ifdef  CONFIG_FLASH_AST2300
++	*((volatile ulong*) 0x1e620000) |= 0x800f0000;      /* enable Flash Write */
++#else
++	*((volatile ulong*) 0x16000000) |= 0x00001c00;      /* enable Flash Write */
++#endif
++
++	/* SCU */
++	*((volatile ulong *)0x1e6e2000) = 0x1688A8A8; /* unlock SCU */
++	reg = *((volatile ulong *)0x1e6e2008);
++	reg &= 0x1c0fffff;
++	reg |= 0x61800000; /* PCLK  = HPLL/8 */
++	*((volatile ulong *)0x1e6e2008) = reg;
++
++	/* arch number */
++	gd->bd->bi_arch_number = MACH_TYPE_ASPEED;
++
++	/* set the clock source of WDT2 for 1MHz */
++	*((volatile ulong *)0x1e78502C) |= 0x10;
++
++	/* adress of boot parameters */
++	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
++
++#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG)
++	dual_boot_watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#else
++	watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#endif
++
++	return 0;
++}
++
++int misc_init_r(void)
++{
++	u32 reg, revision, chip_id;
++
++	/* Show H/W Version */
++	reg = readl(HW_VERSION_BASE);
++
++	chip_id = (reg & 0xff000000) >> 24;
++	revision = (reg & 0xff0000) >> 16;
++
++	puts("H/W:   ");
++	if (chip_id == 1) {
++		if (revision >= 0x80)
++			printf("AST2300 series FPGA Rev. %02x \n", revision);
++		else
++			printf("AST2300 series chip Rev. %02x \n", revision);
++	} else if (chip_id == 2)
++		printf("AST2400 series chip Rev. %02x \n", revision);
++	else if (chip_id == 0)
++		printf("AST2050/AST2150 series chip\n");
++
++	if (env_get("verify") == NULL)
++		env_set("verify", "n");
++	if (env_get("eeprom") == NULL)
++		env_set("eeprom", "y");
++
++	return 0;
++}
++
+diff --git a/board/wb-obmc/ast/ast-g5.c b/board/wb-obmc/ast/ast-g5.c
+new file mode 100644
+index 00000000..36ca7055
+--- /dev/null
++++ b/board/wb-obmc/ast/ast-g5.c
+@@ -0,0 +1,2412 @@
++/*
++ * Copyright 2016 IBM Corporation
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++#include <common.h>
++#include <netdev.h>
++#include <malloc.h>
++#include <image.h>
++
++#include <asm/arch/ast-sdk/ast_scu.h>
++#include <asm/arch/ast-sdk/ast-sdmc.h>
++#include <asm/arch/vbs.h>
++#include <asm/io.h>
++#include <asm/gpio.h>
++#include <asm/arch/gpio.h>
++
++#include "tpm-spl.h"
++#include "util.h"
++#include "ast-product.h"
++#include <i2c.h>
++#include <dm.h>
++
++int env_save(void);
++
++#ifdef DEBUG
++#define ast_debug(fmt, args...)	printf(fmt, ##args)
++#else
++#define ast_debug(fmt, args...)
++#endif
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#ifdef CONFIG_BOARD_LATE_INIT
++
++#define ENV_PRODUCT_NAME       "productname"
++#define ENV_BOARD_ID           "board_id"
++
++#define ENV_PRODUCT_FLAG_NAME  "productflag"
++#define ENV_CONF_FIT_NAME      "conffitname"
++
++#define ENV_PRODUCT_DEBUG      "productdebug"
++
++#define ENV_PRODUCT_FLAG_VAL      "1"
++#define ENV_PRODUCT_NO_FLAG_VAL   "0"
++
++#define ENV_PRODUCT_DEBUG_VAL     "debug"
++#define ENV_MAC_ADDR              "ethaddr"
++#define ENV_MAC0_ADDR             "eth0addr"
++#define ENV_MAC1_ADDR             "eth1addr"
++#define ENV_ETH_PRIME             "ethprime"
++
++#define PRODUCT_I2C_ADDR     (0x57)
++#define PRODUCT_EEPROM_LEN   (256)
++
++#define SCU_BASE                0x1E6E2000
++#define SCU_48                  0x48
++#define DELAY_MASK              0x3F
++#define SCU48_MAC2_TXDELAY_MASK 6
++#define SCU48_MAC2_RXDELAY_MASK 18
++
++/**************************wedge eeprom*****************************/
++#define FBW_EEPROM_F_PRODUCT_NAME_OFFSET (3)
++#define FBW_EEPROM_F_PRODUCT_NAME_LEN (20)
++#define FBW_EEPROM_F_LOCAL_MAC_OFFSET (149)
++
++static dev_info_t *g_dev_info = NULL;
++
++/**
++ *  The TLV Types.
++ *
++ *  Keep these in sync with tlv_code_list in cmd_sys_eeprom.c
++ */
++#define TLV_CODE_PRODUCT_NAME   0x21
++#define TLV_CODE_PART_NUMBER    0x22
++#define TLV_CODE_SERIAL_NUMBER  0x23
++#define TLV_CODE_MAC_BASE       0x24
++#define TLV_CODE_MANUF_DATE     0x25
++#define TLV_CODE_DEVICE_VERSION 0x26
++#define TLV_CODE_LABEL_REVISION 0x27
++#define TLV_CODE_PLATFORM_NAME  0x28
++#define TLV_CODE_ONIE_VERSION   0x29
++#define TLV_CODE_MAC_SIZE       0x2A
++#define TLV_CODE_MANUF_NAME     0x2B
++#define TLV_CODE_MANUF_COUNTRY  0x2C
++#define TLV_CODE_VENDOR_NAME    0x2D
++#define TLV_CODE_DIAG_VERSION   0x2E
++#define TLV_CODE_SERVICE_TAG    0x2F
++#define TLV_CODE_VENDOR_EXT     0xFD
++#define TLV_CODE_CRC_32         0xFE
++
++#define TLV_CODE_EXT_NO_CMD     0
++#define TLV_CODE_EXT_CARD_ID    0x1
++
++
++// Header Field Constants
++#define TLV_INFO_ID_STRING      "TlvInfo"
++#define TLV_INFO_VERSION        0x01
++#define TLV_TOTAL_LEN_MAX       (XXXXXXXX - sizeof(tlvinfo_header_t))
++
++struct __attribute__ ((__packed__)) tlvinfo_header_s {
++    char    signature[8];   /* 0x00 - 0x07 EEPROM Tag "TlvInfo" */
++    u_int8_t      version;  /* 0x08        Structure version */
++    u_int16_t     totallen; /* 0x09 - 0x0A Length of all data which follows */
++};
++typedef struct tlvinfo_header_s tlvinfo_header_t;
++
++/*
++ * TlvInfo TLV: Layout of a TLV field
++ */
++struct __attribute__ ((__packed__)) tlvinfo_tlv_s {
++    u_int8_t  type;
++    u_int8_t  length;
++    u_int8_t  value[0];
++};
++typedef struct tlvinfo_tlv_s tlvinfo_tlv_t;
++
++typedef struct tlv_decode_value_s {
++    u_int8_t value[PRODUCT_INFO_LEN];
++    u_int32_t length;
++} tlv_decode_value_t;
++
++#ifndef BIT
++#define BIT(nr)		(1 << (nr))
++#endif
++#define PCA9641_ADDR           0x10
++#define PCA9641_ID             0x00
++#define PCA9641_ID_MAGIC       0x38
++#define PCA9641_CONTROL        0x01
++#define PCA9641_STATUS         0x02
++#define PCA9641_TIME           0x03
++#define PCA9641_CTL_LOCK_REQ           BIT(0)
++#define PCA9641_CTL_LOCK_GRANT         BIT(1)
++#define PCA9641_CTL_BUS_CONNECT        BIT(2)
++#define PCA9641_CTL_BUS_INIT           BIT(3)
++#define PCA9641_CTL_SMBUS_SWRST        BIT(4)
++#define PCA9641_CTL_IDLE_TIMER_DIS     BIT(5)
++#define PCA9641_CTL_SMBUS_DIS          BIT(6)
++#define PCA9641_CTL_PRIORITY           BIT(7)
++#define PCA9641_STS_OTHER_LOCK         BIT(0)
++#define PCA9641_STS_BUS_INIT_FAIL      BIT(1)
++#define PCA9641_STS_BUS_HUNG           BIT(2)
++#define PCA9641_STS_MBOX_EMPTY         BIT(3)
++#define PCA9641_STS_MBOX_FULL          BIT(4)
++#define PCA9641_STS_TEST_INT           BIT(5)
++#define PCA9641_STS_SCL_IO             BIT(6)
++#define PCA9641_STS_SDA_IO             BIT(7)
++
++#define BUSOFF(x, y)   (!((x) & PCA9641_CTL_LOCK_GRANT) && \
++                       !((y) & PCA9641_STS_OTHER_LOCK))
++#define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
++#define other_lock(x)  ((x) & PCA9641_STS_OTHER_LOCK)
++
++#define PCA9641_TRY_TIMES              1000
++#define PCA9641_DELAY_TIME             2 /* ms */
++
++#define PCA9641_DETECT_TRY_TIMES       3
++#define PCA9641_DETECT_DELAY_TIME      100 /* ms */
++
++u8 eeprom[PRODUCT_EEPROM_LEN];
++
++typedef struct product_map_s {
++    char productname[PRODUCT_INFO_LEN];
++    char fitname[PRODUCT_INFO_LEN];
++} product_map_t;
++
++product_map_t fit_product_list[] = {
++    {"NONE", "none"},
++};
++
++#define PRODUCT_LIST_LEN (sizeof(fit_product_list) / sizeof(fit_product_list[0]))
++
++static inline int _a2v(const uint8_t *a)
++{
++  uint8_t v = *a;
++
++  if ('0' <= v && v <= '9') {
++    return v - '0';
++  }
++  if ('a' <= v && v <= 'f') {
++    return v - 'a' + 10;
++  }
++  if ('A' <= v && v <= 'F') {
++    return v - 'A' + 10;
++  }
++  return -1;
++}
++
++
++static inline int is_valid_tlv(tlvinfo_tlv_t *tlv)
++{
++    return ((tlv->type != 0x00) && (tlv->type != 0xFF));
++}
++
++static inline int is_valid_tlvinfo_header(tlvinfo_header_t *hdr)
++{
++    int max_size = PRODUCT_EEPROM_LEN;
++    return((strcmp(hdr->signature, TLV_INFO_ID_STRING) == 0) &&
++	   (hdr->version == TLV_INFO_VERSION) &&
++	   (be16_to_cpu(hdr->totallen) <= max_size) );
++}
++
++/* Strip out Spaces and carriage returns */
++static void delete_space_lf_cr(char *str)
++{
++    int i, j;
++    int len;
++
++    if (str == NULL) {
++        ast_debug( "param error, str is NULL\n");
++        return;
++    }
++    /* Remove all Spaces from the configuration line */
++    len = strlen(str);
++    for (i = 0; i < len; i++) {
++        if (str[i] == '\r' || str[i] == '\n' || str[i] == ' ') {
++            for (j = i; j < len - 1; j++) {
++                str[j] = str[j + 1];
++            }
++            str[j] = '\0';
++            len--;
++            i--;
++        }
++    }
++}
++
++static void calc_bmc_mac(u_int8_t *mac_addr)
++{
++    int i, tmp_val;
++
++    tmp_val = mac_addr[MAC_ADDR_LENGTH - 1] + 2;
++    if (tmp_val > 0xff) {
++        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
++        for (i = 1; i < MAC_ADDR_LENGTH; i++) {
++            if (mac_addr[MAC_ADDR_LENGTH - i - 1] == 0xff) {
++                mac_addr[MAC_ADDR_LENGTH - i - 1] = 0;
++            } else {
++                mac_addr[MAC_ADDR_LENGTH - i - 1]++;
++                break;
++            }
++        }
++    } else {
++        mac_addr[MAC_ADDR_LENGTH - 1] = tmp_val & 0xff;
++    }
++    return;
++}
++
++static int decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_PRODUCT_NAME:
++    case TLV_CODE_MAC_BASE:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++        break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        return -1;
++    }
++
++    decode_value->length = length;
++    return 0;
++}
++
++static void ext_cmd_decode_tlv_value(tlvinfo_tlv_t *tlv, tlv_decode_value_t *decode_value)
++{
++    char *value;
++    u_int32_t length;
++
++    length = 0;
++    value = (char *)decode_value->value;
++
++    switch (tlv->type) {
++    case TLV_CODE_EXT_CARD_ID:
++        if (tlv->length >= PRODUCT_INFO_LEN) {
++            length = PRODUCT_INFO_LEN - 1;
++        } else {
++            length = tlv->length;
++        }
++        memcpy(value, tlv->value, length);
++        value[length] = 0;
++    	break;
++    default:
++        printf("Error tlv type: %d.\n", tlv->type);
++        break;
++    }
++
++    decode_value->length = length;
++}
++
++static int is_checksum_valid(u_int8_t *eeprom)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t *eeprom_crc;
++    unsigned int calc_crc;
++    unsigned int stored_crc;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Is the eeprom header valid?
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++	    return -1;
++    }
++
++    // Is the last TLV a CRC?
++    eeprom_crc = (tlvinfo_tlv_t *) &eeprom[sizeof(tlvinfo_header_t) +
++        be16_to_cpu(eeprom_hdr->totallen) - (sizeof(tlvinfo_tlv_t) + 4)];
++    if ((eeprom_crc->type != TLV_CODE_CRC_32) || (eeprom_crc->length != 4)) {
++	    return -1;
++    }
++
++    // Calculate the checksum
++    calc_crc = crc32(0xffffffffL, (const unsigned char *)eeprom, sizeof(tlvinfo_header_t) +
++		     be16_to_cpu(eeprom_hdr->totallen) - 4);
++    stored_crc = ((eeprom_crc->value[0] << 24) | (eeprom_crc->value[1] << 16) |
++		  (eeprom_crc->value[2] <<  8) | eeprom_crc->value[3]);
++    if (calc_crc != stored_crc) {
++        return -1;
++    }
++
++    return 0;
++}
++
++static int tlvinfo_find_tlv(u_int8_t *eeprom, u_int8_t tcode, int *eeprom_index)
++{
++    tlvinfo_header_t *eeprom_hdr;
++    tlvinfo_tlv_t    *eeprom_tlv;
++    int eeprom_end;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    *eeprom_index = sizeof(tlvinfo_header_t);
++    eeprom_end = sizeof(tlvinfo_header_t) + be16_to_cpu(eeprom_hdr->totallen);
++    while (*eeprom_index < eeprom_end) {
++	    eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[*eeprom_index];
++	    if (!is_valid_tlv(eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (eeprom_tlv->type == tcode) {
++	        return 0;
++	    }
++
++	    *eeprom_index += sizeof(tlvinfo_tlv_t) + eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_find_tlv_ext(tlvinfo_tlv_t *ext_eeprom, u_int8_t extcode, int *ext_eeprom_index)
++{
++    tlvinfo_tlv_t    *ext_eeprom_tlv;
++
++    // Search through the TLVs, looking for the first one which matches the
++    // supplied type code.
++    while (*ext_eeprom_index < ext_eeprom->length) {
++	    ext_eeprom_tlv = (tlvinfo_tlv_t *) &(ext_eeprom->value)[*ext_eeprom_index];
++	    if (!is_valid_tlv(ext_eeprom_tlv)) {
++            return -1;
++	    }
++
++        if (ext_eeprom_tlv->type == extcode) {
++	        return 0;
++	    }
++
++	    *ext_eeprom_index += sizeof(tlvinfo_tlv_t) + ext_eeprom_tlv->length;
++    }
++
++    return -1;
++}
++
++static int tlvinfo_decode_tlv(u_int8_t *eeprom, u_int8_t tcode, u_int8_t extcode, tlv_decode_value_t *decode_value)
++{
++    int eeprom_index = 0;
++    int ext_eeprom_index = 0;
++    tlvinfo_tlv_t *eeprom_tlv;
++    tlvinfo_tlv_t *ext_eeprom_tlv;
++
++    if (tcode == TLV_CODE_VENDOR_EXT) {
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            if (tlvinfo_find_tlv_ext(eeprom_tlv, extcode, &ext_eeprom_index) == 0) {
++                ext_eeprom_tlv = (tlvinfo_tlv_t *) &((eeprom_tlv->value)[ext_eeprom_index]);
++                ext_cmd_decode_tlv_value(ext_eeprom_tlv, decode_value);
++                return 0;
++            }
++            return 0;
++        }
++    } else {
++        // Find the TLV and then decode it
++        if (tlvinfo_find_tlv(eeprom, tcode, &eeprom_index) == 0) {
++            eeprom_tlv = (tlvinfo_tlv_t *) &eeprom[eeprom_index];
++            return decode_tlv_value(eeprom_tlv, decode_value);
++        }
++    }
++
++    return -1;
++}
++
++static int get_product_name_from_wedge_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_PRODUCT_NAME_OFFSET];
++
++    if (p_size < FBW_EEPROM_F_PRODUCT_NAME_LEN) {
++        ast_debug("p_size: %d, is less than wedge eeprom product name length: %d\n",
++            p_size, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++        return -1;
++    }
++
++    memcpy(product, cur, FBW_EEPROM_F_PRODUCT_NAME_LEN);
++    delete_space_lf_cr(product);
++    return 0;
++}
++#if 0
++static int get_product_name_from_tlv_eeprom(u_int8_t *eeprom, char *product, u_int32_t p_size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_PRODUCT_NAME, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        printf("No found Product Name\n");
++        return -1;
++    }
++
++    if (p_size >= decode_value.length) {
++        memcpy(product, decode_value.value, decode_value.length);
++    } else {
++        memcpy(product, decode_value.value, p_size);
++    }
++
++    return 0;
++}
++#endif
++
++static int get_product_id_from_tlv_eeprom(u_int8_t *eeprom, unsigned long *product_id)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++    int i;
++    unsigned long tmp_product_id = 0;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_VENDOR_EXT, TLV_CODE_EXT_CARD_ID, &decode_value);
++    if (ret != 0) {
++        printf("No found Product ID\n");
++        return -1;
++    }
++
++    for (i = 0; i < decode_value.length; i++) {
++        tmp_product_id = tmp_product_id << 8;
++        tmp_product_id |= decode_value.value[i];
++    }
++
++    *product_id = tmp_product_id;
++    ast_debug("tlv_product_id = 0x%lx \n", *product_id);
++
++    return 0;
++}
++
++static int get_mac_from_tlv_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    bool ret;
++    tlvinfo_header_t *eeprom_hdr;
++    tlv_decode_value_t decode_value;
++
++    eeprom_hdr = (tlvinfo_header_t *) eeprom;
++
++    if (!is_valid_tlvinfo_header(eeprom_hdr)) {
++        printf("Failed to check tlv header.\n");
++        return -1;
++    }
++
++    if (!is_checksum_valid(eeprom)) {
++        printf("Failed to check tlv crc.\n");
++        return -1;
++    }
++
++    memset((void *)&decode_value, 0, sizeof(tlv_decode_value_t));
++    ret = tlvinfo_decode_tlv(eeprom, TLV_CODE_MAC_BASE, TLV_CODE_EXT_NO_CMD, &decode_value);
++    if (ret != 0) {
++        ast_debug("No found MAC address\n");
++        return -1;
++    }
++
++    if (decode_value.length != size) {
++        printf("Invalid mac addr size: %d.\n", decode_value.length);
++        return -1;
++    }
++
++    memcpy(buf, decode_value.value, size);
++    return 0;
++}
++
++
++static int get_mac_from_wedge_eeprom(u_int8_t *eeprom, u_int8_t *buf, u_int32_t size)
++{
++    int i, a2v_tmp1, a2v_tmp2;
++    const uint8_t *cur = &eeprom[FBW_EEPROM_F_LOCAL_MAC_OFFSET];
++
++    if (size < MAC_ADDR_LENGTH) {
++        ast_debug("mac size buf %d is less than 6\n", size)
++        return -1;
++    }
++
++    for (i = 0; i < MAC_ADDR_LENGTH; i++) {
++        a2v_tmp1 = _a2v(cur);
++        a2v_tmp2 = _a2v(cur + 1);
++        if ((a2v_tmp1 < 0) || (a2v_tmp2 < 0)) {
++            printf("Invalid mac address ASCII, index: %d, value: 0x%02x, 0x%02x\n", i * 2, cur[0], cur[1]);
++            return -1;
++        }
++        *buf = ((a2v_tmp1 << 4) | a2v_tmp2) & 0xff;
++        buf++;
++        cur += 2;
++    }
++    return 0;
++}
++
++static int get_dev_info_from_tlv_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    unsigned long product_id;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    int mac_addr_valid_flag;
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_tlv_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++    ret = get_product_id_from_tlv_eeprom(eeprom, &product_id);
++    if (ret < 0) {
++        return -1;
++    }
++
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if (product_id == g_dev_info_list[i].dev_type) {
++            *dev_info = &g_dev_info_list[i];
++            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++            if (mac_addr_valid_flag) {
++                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++            }
++            return 0;
++        }
++    }
++    return -1;
++}
++
++static int get_dev_info_from_wedge_eeprom(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int i, ret;
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];
++    char product[PRODUCT_INFO_LEN];
++    int mac_addr_valid_flag;
++
++    /* get MAC addr */
++    memset(mac_addr, 0, sizeof(mac_addr));
++    ret = get_mac_from_wedge_eeprom(eeprom, mac_addr, sizeof(mac_addr));
++    if (ret < 0) {
++        ast_debug("Failed to read mac address\n");
++        mac_addr_valid_flag = 0;
++    } else {
++        calc_bmc_mac(mac_addr);
++        if (is_valid_ethaddr(mac_addr)) {
++            mac_addr_valid_flag = 1;
++        } else {
++            mac_addr_valid_flag = 0;
++        }
++    }
++
++
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_wedge_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if (strcmp(product, g_dev_info_list[i].dev_name) == 0) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            (*dev_info)->mac_addr_valid_flag = mac_addr_valid_flag;
++            if (mac_addr_valid_flag) {
++                memcpy((*dev_info)->mac_addr , mac_addr, MAC_ADDR_LENGTH);
++            }
++            return 0;
++        }
++    }
++    return -1;
++}
++
++static int pca9641_set_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl, reg_sts;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    ret = dm_i2c_read(dev, PCA9641_STATUS, &reg_sts, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    reg_ctl |= PCA9641_CTL_PRIORITY; /* set pca9641 priority */
++    if (BUSOFF(reg_ctl, reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to read pca9641: 0x%02x.(busoff)\n", PCA9641_CONTROL);
++            return -1;
++        }
++
++        if (lock_grant(reg_ctl)) {
++            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++            ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++            if (ret < 0) {
++                ast_debug("Failed to write pca9641: 0x%02x.(busoff, lock_grant)\n", PCA9641_CONTROL);
++                return -1;
++            }
++        } else {
++            return -1;
++        }
++    } else if (lock_grant(reg_ctl)) {
++        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(lock_grant)\n", PCA9641_CONTROL);
++            return -1;
++        }
++    } else if (other_lock(reg_sts)) {
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++        if (ret < 0) {
++            ast_debug("Failed to write pca9641: 0x%02x.(other_lock)\n", PCA9641_CONTROL);
++            return -1;
++        }
++        return -1;
++    }
++
++    return 0;
++}
++
++static int pca9641_detect(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    ret = dm_i2c_read(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to read pca9641.\n");
++        return -1;
++    }
++
++    return 0;
++}
++
++static void pca9641_release_bus(struct udevice *dev)
++{
++    int ret;
++    u8 reg_ctl;
++
++    reg_ctl = 0;
++    ret = dm_i2c_write(dev, PCA9641_CONTROL, &reg_ctl, 1);
++    if (ret < 0) {
++        ast_debug("Failed to release pca9641: 0x%02x.\n", PCA9641_CONTROL);
++    }
++
++}
++#if 0
++static int get_product_name_match(u_int8_t *eeprom, dev_info_t **dev_info)
++{
++    int ret;
++    int i;
++    char product[PRODUCT_INFO_LEN];
++
++    memset(product, 0, sizeof(product));
++    ret = get_product_name_from_tlv_eeprom(eeprom, product, sizeof(product) - 1);
++    if (ret < 0) {
++        return ret;
++    }
++    for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++        if ( strcmp(product, g_dev_info_list[i].dev_name ) == 0 ) {
++            /* name match */
++            *dev_info = &g_dev_info_list[i];
++            return 0;
++        }
++    }
++
++    return -1;
++}
++#endif
++static int pca9641_get_eeprom(struct udevice *pca9641_dev, struct udevice *e2_dev, int addr)
++{
++    int ret;
++    int i;
++
++    /* detect pca9641, if fail, return */
++    for (i = 0; i < PCA9641_DETECT_TRY_TIMES; i++) {
++        ret = pca9641_detect(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DETECT_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_DETECT_TRY_TIMES) {
++        ast_debug("Failed to detect pca9641.\n");
++        return -1;
++    }
++
++    for (i = 0; i < PCA9641_TRY_TIMES; i++) {
++        ret = pca9641_set_bus(pca9641_dev);
++        if (ret == 0) {
++            break;
++        }
++        udelay(PCA9641_DELAY_TIME * 1000);
++    }
++
++    if (i == PCA9641_TRY_TIMES) {
++        ast_debug("Failed to set pca9641 bus.\n");
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    ret = dm_i2c_read(e2_dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        pca9641_release_bus(pca9641_dev);
++        return -1;
++    }
++
++    pca9641_release_bus(pca9641_dev);
++
++    return 0;
++}
++
++static int normal_get_eeprom(struct udevice *dev, int addr)
++{
++    int ret;
++
++    ret = dm_i2c_read(dev, 0x00, eeprom, PRODUCT_EEPROM_LEN);
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom: 0x%x.\n", addr);
++        return -1;
++    }
++    return 0;
++}
++
++static int get_product_name(eeprom_list_t *tmp_eeprom_list, dev_info_t **dev_info)
++{
++    struct udevice *bus, *e2_dev, *pca9641_dev;
++    int ret = -1;
++
++    ast_debug("get_product_name: bus = %d, addr = 0x%x \n", tmp_eeprom_list->bus, tmp_eeprom_list->addr);
++
++    uclass_get_device_by_seq(UCLASS_I2C, tmp_eeprom_list->bus, &bus);
++    ret = i2c_get_chip(bus, tmp_eeprom_list->addr, 1, &e2_dev);
++    if (ret) {
++        ast_debug("get eeprom chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++            tmp_eeprom_list->bus, tmp_eeprom_list->addr, ret);
++        return -1;
++    }
++    ast_debug("get eeprom chip success\n");
++
++    if (tmp_eeprom_list->is_pca9641 == IS_PCA9641) {
++        ret = i2c_get_chip(bus, PCA9641_ADDR, 1, &pca9641_dev);
++        if (ret) {
++            ast_debug("get pca9641 chip failed, bus: %d, addr: 0x%x, ret: %d\n",
++                tmp_eeprom_list->bus, PCA9641_ADDR, ret);
++            return -1;
++        }
++        ast_debug("get pca9641 chip success\n");
++        ret = pca9641_get_eeprom(pca9641_dev, e2_dev, tmp_eeprom_list->addr);
++    } else {
++        ret = normal_get_eeprom(e2_dev, tmp_eeprom_list->addr);
++    }
++
++    if (ret < 0) {
++        ast_debug("Failed to read eeprom.\n");
++        return ret;
++    }
++
++    /* wedge eeprom magic */
++    if ((eeprom[0] == 0xfb) && (eeprom[1] == 0xfb)) {
++        ret = get_dev_info_from_wedge_eeprom(eeprom, dev_info);
++    } else {
++        ret = get_dev_info_from_tlv_eeprom(eeprom, dev_info);
++    }
++
++    return ret;
++}
++
++static int save_mac_addr(dev_info_t *dev_info, char *env_mac_name)
++{
++    char mac_addr_str[PRODUCT_INFO_LEN];
++    char *p_mac_addr;
++
++    memset(mac_addr_str, 0, sizeof(mac_addr_str));
++    if (dev_info->mac_addr_valid_flag) {
++        snprintf(mac_addr_str, sizeof(mac_addr_str), "%pM", dev_info->mac_addr);
++        p_mac_addr = env_get(env_mac_name);
++        if ((p_mac_addr == NULL) || (strcmp(p_mac_addr, mac_addr_str) != 0)) {
++            env_set(env_mac_name, mac_addr_str);
++            ast_debug("Set %s to flash env...\n", env_mac_name);
++            return 1;
++        }
++    }
++    return 0;
++}
++
++static void save_product_name(dev_info_t *dev_info)
++{
++    u32 len;
++    char fit[PRODUCT_INFO_LEN];
++    char board_id_str[PRODUCT_INFO_LEN];
++    char *env_product, *save_flag, *fit_name, *def_fit_name, *p_board_id, *env_eth_prime;
++    int is_save_flag;
++    int i;
++    char *debug_product;
++
++    /* ......productname . conffitname */
++    debug_product = env_get(ENV_PRODUCT_DEBUG);
++    if (debug_product != NULL && (strcmp(debug_product, ENV_PRODUCT_DEBUG_VAL) == 0)) {
++        printf("Debug mode...\n");
++        return;
++    }
++
++    if (dev_info == NULL) {
++        printf("dev_info is NULL, can't get product info.\n");
++        return;
++    }
++
++    is_save_flag = 0;
++    /* productname.. */
++    env_product = env_get(ENV_PRODUCT_NAME);
++    if (env_product == NULL || strcmp(dev_info->dev_name, env_product) != 0) {
++        env_set(ENV_PRODUCT_NAME, dev_info->dev_name);
++        env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_FLAG_VAL);
++        is_save_flag = 1;
++    } else {
++        save_flag = env_get(ENV_PRODUCT_FLAG_NAME);
++        if (strcmp(save_flag, ENV_PRODUCT_FLAG_VAL) == 0) {
++            env_set(ENV_PRODUCT_FLAG_NAME, ENV_PRODUCT_NO_FLAG_VAL);
++            is_save_flag = 1;
++        }
++    }
++
++    /* conffitname.. */
++    def_fit_name = dev_info->conffit_name;
++    memset(fit, 0, PRODUCT_INFO_LEN);
++    len = (strlen(def_fit_name) >= PRODUCT_INFO_LEN) ? (PRODUCT_INFO_LEN - 1) : strlen(def_fit_name);
++    for (i = 0; i < len; i++) {
++        if (def_fit_name[i] >= 'A' && def_fit_name[i] <= 'Z') {
++            fit[i] = def_fit_name[i] + 32;
++        } else {
++            fit[i] = def_fit_name[i];
++        }
++    }
++    fit_name = env_get(ENV_CONF_FIT_NAME);
++    if (fit_name == NULL || strcmp(fit, fit_name) != 0) {
++        env_set(ENV_CONF_FIT_NAME, fit);
++        is_save_flag = 1;
++    }
++
++    /* board_id */
++    memset(board_id_str, 0, sizeof(board_id_str));
++    snprintf(board_id_str, sizeof(board_id_str), "0x%x", dev_info->dev_type);
++    p_board_id = env_get(ENV_BOARD_ID);
++    if (p_board_id == NULL || strcmp(p_board_id, board_id_str) != 0) {
++        env_set(ENV_BOARD_ID, board_id_str);
++        is_save_flag = 1;
++    }
++
++    /* mac addr */
++    if (save_mac_addr(dev_info, ENV_MAC_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* mac0 addr */
++    if (save_mac_addr(dev_info, ENV_MAC0_ADDR)) {
++        is_save_flag = 1;
++    }
++    /* mac1 addr */
++    if (save_mac_addr(dev_info, ENV_MAC1_ADDR)) {
++        is_save_flag = 1;
++    }
++
++    /* eth prime */
++    env_eth_prime = env_get(ENV_ETH_PRIME);
++    if (env_eth_prime == NULL || strcmp(dev_info->eth_prime, env_eth_prime) != 0) {
++        env_set(ENV_ETH_PRIME, dev_info->eth_prime);
++        is_save_flag = 1;
++    }
++
++    if (is_save_flag) {
++        ast_debug("save_env\n");
++        env_save();
++    }
++}
++
++static void product_name_match(void)
++{
++    int i;
++    int ret = -1;
++    char *env_board_id;
++    dev_info_t *dev_info;
++    unsigned long board_id;
++
++    dev_info =NULL;
++    for (i = 0; i < (sizeof(g_eeprom_list) / sizeof(eeprom_list_t)); i++) {
++        ret = get_product_name(&g_eeprom_list[i], &dev_info);
++        if (ret >= 0) {
++            ast_debug("match ok, board_id: 0x%x, productname: %s, conffitname: %s\n",
++                dev_info->dev_type, dev_info->dev_name, dev_info->conffit_name);
++            break;
++        }
++    }
++
++    if (ret < 0) {
++        env_board_id = env_get(ENV_BOARD_ID);
++        if (env_board_id == NULL) {
++            printf("Failed to get product from eeprom\nSet default product: %s\n", g_dev_info_list[0].dev_name);
++            /* read board id failed, default load g_dev_info_list[0] */
++            dev_info = &g_dev_info_list[0];
++        } else { /* ENV have board ID */
++            /* board ID match dev_info */
++            board_id = simple_strtoul(env_board_id, NULL, 16);
++            printf("Get board id from env, board_id: 0x%lx\n", board_id);
++            for (i = 0; i < (sizeof(g_dev_info_list) / sizeof(dev_info_t)); i++) {
++                if (g_dev_info_list[i].dev_type == board_id) {
++                    /* board id match */
++                    dev_info = &g_dev_info_list[i];
++                    break;
++                }
++            }
++        }
++    }
++
++    save_product_name(dev_info);
++    g_dev_info = dev_info;
++    return;
++}
++
++static void set_mac_txrx_delay(void)
++{
++    u32 value;
++    int txdelay, rxdelay;
++
++    if (g_dev_info == NULL) {
++        return;
++    }
++
++    txdelay = g_dev_info->tx_delay;
++    rxdelay = g_dev_info->rx_delay;
++    if ((txdelay < 0) || (txdelay > 63) || (rxdelay < 0) || (rxdelay > 63)) {
++        return;
++    }
++
++    value = __raw_readl(SCU_BASE + SCU_48);
++    value = (value & ~(DELAY_MASK << SCU48_MAC2_TXDELAY_MASK)) & ~(DELAY_MASK << SCU48_MAC2_RXDELAY_MASK);
++    value = (value | (txdelay << SCU48_MAC2_TXDELAY_MASK)) | (rxdelay << SCU48_MAC2_RXDELAY_MASK);
++    __raw_writel(value, SCU_BASE + SCU_48);
++    value = __raw_readl(SCU_BASE + SCU_48);
++    return;
++}
++
++int board_late_init(void)
++{
++    product_name_match();
++    set_mac_txrx_delay();
++    return 0;
++}
++#endif
++
++
++static void vboot_check_enforce(void)
++{
++  /* Clean the handoff marker from ROM. */
++  volatile struct vbs *vbs = (volatile struct vbs*)AST_SRAM_VBS_BASE;
++  if (vbs->hardware_enforce) {
++    /* If we are hardware-enforcing then this U-Boot is verified. */
++    env_set("verify", "yes");
++  }
++}
++
++#ifdef CONFIG_ASPEED_TPM
++static int vboot_get_image_hash_from_fit(uint8_t *fit, int image_offset,
++				uint8_t **valuep, int *value_lenp)
++{
++	int hash_offset;
++	uint8_t *value = 0;
++	int value_len = 0;
++	int ret = -1;
++
++	log_debug("Get hash from fit 0x%p(%d)\n", fit, image_offset);
++	hash_offset = fdt_subnode_offset(fit, image_offset, FIT_HASH_NODENAME);
++	if (hash_offset < 0) {
++		log_err("No hash subnode in fit = %p, image = %d\n",
++			fit, image_offset);
++		return ret;
++	}
++
++	ret = fit_image_hash_get_value(fit, hash_offset, &value, &value_len);
++	if (ret)
++		return ret;
++
++	log_debug("hash[%d]:\n", value_len);
++	log_debug_buffer( value, value_len );
++	if (valuep) *valuep = value;
++	if (value_lenp) *value_lenp = value_len;
++
++	return ret;
++}
++
++static void vboot_uboot_do_measures(volatile struct vbs *vbs)
++{
++	uint8_t *value;
++	int value_len;
++
++	printf("\n");
++	printf("measure vbs...");
++	ast_tpm_extend(AST_TPM_PCR_VBS, (uint8_t *)vbs, sizeof(struct vbs));
++	printf("done\n");
++
++	printf("measure OS-Kernel...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_os, images.fit_noffset_os,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++
++	printf("measure Ramdisk...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_rd, images.fit_noffset_rd,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++
++	printf("measure Fdt...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_fdt, images.fit_noffset_fdt,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++}
++
++#endif
++
++static void vboot_finish(void)
++{
++  /* Clean the handoff marker from ROM. */
++  volatile struct vbs *vbs = (volatile struct vbs*)AST_SRAM_VBS_BASE;
++  vbs->rom_handoff = 0x0;
++
++#ifdef CONFIG_ASPEED_TPM
++	if (vbs->hardware_enforce ||
++	    vbs->software_enforce ||
++	    vbs->recovery_boot) {
++		/* Only do measure when verifiy boot is enabled */
++		vboot_uboot_do_measures(vbs);
++	}
++	ast_tpm_finish();
++#endif
++}
++
++char* fit_cert_store(void)
++{
++  volatile struct vbs *vbs = (volatile struct vbs*)AST_SRAM_VBS_BASE;
++  return (char*)(vbs->subordinate_keys);
++}
++
++void arch_preboot_os(void) {
++  vboot_finish();
++}
++
++#if defined(CONFIG_FBTP) || defined(CONFIG_PWNEPTUNE)
++static void fan_init(void)
++{
++  __raw_writel(0x43004300, 0x1e786008);
++}
++
++static int get_svr_pwr(void)
++{
++  // GPIOB6
++  return ((__raw_readl(AST_GPIO_BASE + 0x00) >> 14) & 1);
++}
++
++static void set_svr_pwr_btn(int level)
++{
++  u32 reg;
++  // GPIOE3
++  // output
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  __raw_writel(reg | (1 << 3), AST_GPIO_BASE + 0x24);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  if (level) //high
++    reg |= (1<<3);
++  else // low
++    reg &= ~(1<<3);
++  __raw_writel(reg, AST_GPIO_BASE + 0x20);
++}
++
++static void policy_init(void)
++{
++  u32 reg;
++  char *policy = NULL;
++  char *last_state = NULL;
++  char *result;
++  int to_pwr_on = 0;
++
++  // BMC's SCU3C: System Reset Control/Status Register
++  reg = __raw_readl(AST_SCU_BASE + 0x3c);
++  // Power on reset flag(SCU3C[0])
++  // POR flag bit will be cleared at Linux init
++  if (reg & 0x1) {
++    // getenv return the same buffer,
++    // duplicate result before call it again.
++    result = env_get("por_policy");
++    policy = (result) ? strdup(result) : NULL;
++    // printf("%X por_policy:%s\n", policy, policy?policy:"null");
++
++    result = env_get("por_ls");
++    last_state = (result) ? strdup(result) : NULL;
++    // printf("%X por_ls:%s\n", last_state, last_state?last_state:"null");
++
++    if (policy && last_state){
++      if ((!strcmp(policy, "on")) ||
++          (!strcmp(policy, "lps") && !strcmp(last_state, "on"))
++      ) {
++        to_pwr_on = 1;
++      }
++    } else {
++      // default power on if no por config
++      to_pwr_on = 1;
++    }
++  }
++  printf("to_pwr_on: %d, policy:%s, ls:%s, scu3c:%08X\n",
++    to_pwr_on,
++    policy ? policy : "null",
++    last_state ? last_state : "null",
++    reg);
++
++  // Host Server should power on
++  if (to_pwr_on == 1) {
++    // Host Server is not on
++    if (!get_svr_pwr()) {
++      set_svr_pwr_btn(0);
++      udelay(1000*1000);
++      set_svr_pwr_btn(1);
++      udelay(1000*1000);
++      if (!get_svr_pwr())
++        printf("!!!! Power On failed !!!!\n");
++    }
++  }
++
++  // free duplicated string buffer
++  if (policy)
++    free(policy);
++  if (last_state)
++    free(last_state);
++}
++
++static void disable_bios_debug(void)
++{
++  u32 reg;
++  // Set GPIOD0's direction as Output
++  reg = __raw_readl(AST_GPIO_BASE + 0x4);
++  __raw_writel(reg | (1 << 24), AST_GPIO_BASE + 0x4);
++
++  // Set GPIOD0's value as HIGH
++  reg = __raw_readl(AST_GPIO_BASE + 0x0);
++  reg |= (1<<24);
++  __raw_writel(reg, AST_GPIO_BASE + 0x0);
++}
++
++static int disable_snoop_dma_interrupt(void)
++{
++  // Disable interrupt which will not be clearred by wdt reset
++  // to avoid interrupts triggered before linux kernel can handle it.
++  // PCCR0: Post Code Control Register 0
++#ifdef DEBUG
++  printf("pccr0: %08X\n", __raw_readl(AST_LPC_BASE + 0x130));
++#endif
++  __raw_writel(0x0, AST_LPC_BASE + 0x130);
++
++  return 0;
++}
++
++#endif
++
++#ifdef CONFIG_FBY2
++static void fan_init(void)
++{
++  u32 reg;
++
++  // enable PWM0 and PWM1 function pin
++  reg = __raw_readl(AST_SCU_BASE + 0x88);
++  reg |= 0x03;
++  __raw_writel(reg, AST_SCU_BASE + 0x88);
++
++  reg = __raw_readl(AST_SCU_BASE + 0x04);
++  reg &= ~0x200;
++  __raw_writel(reg, AST_SCU_BASE + 0x04);
++
++  // set PWM0 and PWM1 to 70%
++  __raw_writel(0x09435F05, AST_PWM_BASE + 0x04);
++  __raw_writel(0x43004300, AST_PWM_BASE + 0x08);
++  __raw_writel(0x00000301, AST_PWM_BASE + 0x00);
++}
++
++static int mux_init(void)
++{
++  u8 loc;
++  u32 reg, pwr_en;
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  loc = ((reg >> 20) & 0xF) % 5;
++
++  // USB MUX, P3V3 enable
++  // enable GPIOAB3,AB1 WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x18C);
++  reg |= 0xA000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x18C);
++  // set USB MUX, P3V3 enable
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  if (loc < MAX_NODES) {
++    pwr_en = __raw_readl(AST_GPIO_BASE + 0x70);
++    reg = (reg & ~0x8000000) | ((pwr_en & (1 << loc)) ? 0x2000000 : 0xA000000);
++  } else {
++    reg |= 0xA000000;
++  }
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E0);
++  // set GPIOAB3,AB1 as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  reg |= 0xA000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E4);
++
++  // USB MUX
++  // enable GPIOE[5:4] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x3C);
++  reg |= 0x30;
++  __raw_writel(reg, AST_GPIO_BASE + 0x3C);
++  // set USB MUX location
++  reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  if (loc < MAX_NODES) {
++    reg = (reg & ~0x30) | (loc << 4);
++  }
++  __raw_writel(reg, AST_GPIO_BASE + 0x20);
++  // set GPIOE[5:4] as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  reg |= 0x30;
++  __raw_writel(reg, AST_GPIO_BASE + 0x24);
++
++  // VGA MUX
++  // enable GPIOJ[3:0] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0xAC);
++  reg |= 0xF00;
++  __raw_writel(reg, AST_GPIO_BASE + 0xAC);
++  // set VGA MUX location
++  reg = __raw_readl(AST_GPIO_BASE + 0x70);
++  if (loc < MAX_NODES) {
++    reg = (reg & ~0xC00);
++  }
++  __raw_writel(reg, AST_GPIO_BASE + 0x70);
++  // set GPIOJ[3:0] as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x74);
++  reg |= 0xF00;
++  __raw_writel(reg, AST_GPIO_BASE + 0x74);
++
++  // PCIe Clk/Rst buffer
++  // enable GPIOB[7:4] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x1C);
++  reg |= 0xF000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1C);
++  // set PCIe Clk/Rst buffer
++  reg = __raw_readl(AST_GPIO_BASE + 0x00);
++  __raw_writel(reg, AST_GPIO_BASE + 0x00);
++  // set GPIOB[7:4] as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x04);
++  reg |= 0xF000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x04);
++
++  return 0;
++}
++
++static int slot_12V_init(void)
++{
++  u32 slot_present_reg;
++  u32 slot_12v_reg;
++  u32 dir_reg;
++  u32 toler_reg;
++  uint8_t val_prim;
++  uint8_t val_ext;
++  int i;
++
++  //Read GPIOZ0~Z3 and AA0~AA3
++  slot_present_reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  //Read GPIOO4~O7
++  slot_12v_reg = __raw_readl(AST_GPIO_BASE + 0x078);
++
++  for (i = 0; i < MAX_NODES; i++) {
++    val_ext = (slot_present_reg >> (2*MAX_NODES+i)) & 0x1;
++    val_prim = (slot_present_reg >> (4*MAX_NODES+i)) & 0x1;
++
++    if (val_prim || val_ext) {
++      slot_12v_reg &= ~(1<<(5*MAX_NODES+i));
++    } else {
++      slot_12v_reg |= (1<<(5*MAX_NODES+i));
++    }
++  }
++
++  //Set GPIOO4~O7 Watchdog reset tolerance
++  toler_reg = __raw_readl(AST_GPIO_BASE + 0x0FC);
++  toler_reg |= 0xF00000;
++  __raw_writel(toler_reg, AST_GPIO_BASE + 0x0FC);
++
++  //Configure GPIOO4~O7
++  __raw_writel(slot_12v_reg, AST_GPIO_BASE + 0x078);
++  dir_reg = __raw_readl(AST_GPIO_BASE + 0x07C);
++  dir_reg |= 0xF00000;
++  __raw_writel(dir_reg, AST_GPIO_BASE + 0x07C);
++  __raw_writel(slot_12v_reg, AST_GPIO_BASE + 0x078);
++
++  return 0;
++}
++
++static int slot_led_init(void)
++{
++  u32 reg, dir_reg;
++  u32 fan_latch;
++  u32 slot_present_reg;
++  uint8_t val_prim;
++  uint8_t val_ext;
++  int i;
++
++  // enable GPIOAC0~AC3, and AC7
++  reg = __raw_readl(AST_SCU_BASE + 0xAC);
++  reg &= ~0x8F;
++  __raw_writel(reg, AST_SCU_BASE + 0xAC);
++
++  // read GPIOH5
++  fan_latch = __raw_readl(AST_GPIO_BASE + 0x020) & 0x20000000;
++
++  //Read GPIOZ0~Z3 and AA0~AA3
++  slot_present_reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++
++  // configure GPIOAC0~AC3, and AC7
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++
++  for (i = 0; i < MAX_NODES; i++) {
++    val_ext = (slot_present_reg >> (2*MAX_NODES+i)) & 0x1;
++    val_prim = (slot_present_reg >> (4*MAX_NODES+i)) & 0x1;
++
++    if (val_prim || val_ext)
++      reg &= ~(1 << i);
++    else
++      reg |= (1 << i);
++  }
++
++  reg = (fan_latch) ? (reg | 0x80) : (reg & ~0x8F);
++
++  dir_reg = __raw_readl(AST_GPIO_BASE + 0x1EC) | 0x8F;
++  __raw_writel(dir_reg, AST_GPIO_BASE + 0x1EC);
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++  return 0;
++}
++#endif
++
++#ifdef CONFIG_FBY3
++static int slot_12V_init(void)
++{
++  int ret = -1;
++  int retry = 2;
++  int i = 0;
++  int node = 0;
++  int board_id = 0;
++  int slots_present_status = 0;
++  uint8_t present = 0;
++  struct udevice *bus, *dev;
++  struct gpio_desc desc[4];
++  // struct gpio_desc desctest[4];
++
++  node = fdt_node_offset_by_compatible(gd->fdt_blob, 0, "board_id");
++  if (node < 0) {
++    return -1;
++  }
++  ret = gpio_request_list_by_name_nodev(offset_to_ofnode(node),
++                "board-id-gpios", desc,
++                ARRAY_SIZE(desc), GPIOD_IS_IN);
++  if (ret < 0) {
++    return ret;
++  }
++  board_id = dm_gpio_get_values_as_int(desc, ret);
++  debug("board_id = %x\n", board_id);
++
++  // if config C, do nothing
++  // GPIOF[0:3] = BOARD_ID[3:0] = 1001 -------> NIC Expansion Card
++  if (board_id == 9) {
++    return 0;
++  }
++
++  node = fdt_node_offset_by_compatible(gd->fdt_blob, 0, "slots-present");
++  if (node < 0) {
++    return -1;
++  }
++  ret = gpio_request_list_by_name_nodev(offset_to_ofnode(node),
++              "slots-present-gpios", desc,
++              ARRAY_SIZE(desc), GPIOD_IS_IN);
++  if (ret < 0) {
++    return ret;
++  }
++  slots_present_status = dm_gpio_get_values_as_int(desc, ret);
++
++  do {
++    ret = uclass_get_device_by_name(UCLASS_I2C, CONFIG_BB_CPLD_BUS, &bus);
++    if (ret) {
++      break;
++    }
++
++    ret = i2c_get_chip(bus, CONFIG_BB_CPLD_ADDR, 1, &dev);
++    if (ret) {
++      break;
++    }
++
++    for (i = 0; i < MAX_NODES; i++) {
++      present = (slots_present_status >> i) & 0x01;
++      if (present == 0) {
++        retry = 2;
++        do {
++          ret = dm_i2c_reg_write(dev, 0x09+i, 0x01);
++          if (ret && retry) {
++            udelay(10000);
++          }
++        } while (ret && (retry-- > 0));
++      }
++    }
++  } while (0);
++
++  return 0;
++}
++#endif //CONFIG_FBY3 end
++
++#ifdef CONFIG_MINILAKETB
++static void fan_init(void)
++{
++  u32 reg;
++
++  // enable PWM0 and PWM1 function pin
++  reg = __raw_readl(AST_SCU_BASE + 0x88);
++  reg |= 0x03;
++  __raw_writel(reg, AST_SCU_BASE + 0x88);
++
++  reg = __raw_readl(AST_SCU_BASE + 0x04);
++  reg &= ~0x200;
++  __raw_writel(reg, AST_SCU_BASE + 0x04);
++
++  // set PWM0 and PWM1 to 70%
++  __raw_writel(0x09435F05, AST_PWM_BASE + 0x04);
++  __raw_writel(0x43004300, AST_PWM_BASE + 0x08);
++  __raw_writel(0x00000301, AST_PWM_BASE + 0x00);
++}
++
++static int mux_init(void)
++{
++  u8 loc;
++  u32 reg;
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  loc = ((reg >> 20) & 0x0F) % 5;
++
++  // USB MUX, P3V3 enable
++  // enable GPIOAB3,AB1 WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x18C);
++  reg |= 0xA000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x18C);
++  // set USB MUX, P3V3 enable
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  reg = (reg & ~0xA000000) | (loc < MAX_NODES)?0x2000000:0xA000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E0);
++  // set GPIOAB3,AB1 as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  reg |= 0xA000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E4);
++
++  /*minilaketb : use GPIOE[4], GPIOF[1] as input gpio*/
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  reg &= ~0x210;
++  __raw_writel(reg, AST_GPIO_BASE + 0x24);
++
++  // USB MUX
++  // enable GPIOE[5:4] WDT reset tolerance
++  // reg = __raw_readl(AST_GPIO_BASE + 0x3C);
++  // reg |= 0x30;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x3C);
++  // set USB MUX location
++  // reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  // if (loc < MAX_NODES) {
++  //   reg = (reg & ~0x30) | (loc << 4);
++  // }
++  // __raw_writel(reg, AST_GPIO_BASE + 0x20);
++  // set GPIOE[5:4] as output
++  // reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  // reg |= 0x30;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x24);
++
++  // VGA MUX
++  // enable GPIOJ[3:0] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0xAC);
++  reg |= 0xF00;
++  __raw_writel(reg, AST_GPIO_BASE + 0xAC);
++  // set VGA MUX location
++  reg = __raw_readl(AST_GPIO_BASE + 0x70);
++  if (loc < MAX_NODES) {
++    reg = (reg & ~0xC00) | (loc << 10);
++  }
++  __raw_writel(reg, AST_GPIO_BASE + 0x70);
++  // set GPIOJ[3:0] as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x74);
++  reg |= 0xF00;
++  __raw_writel(reg, AST_GPIO_BASE + 0x74);
++
++  // PCIe Clk/Rst buffer
++  // enable GPIOB[7:4] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x1C);
++  reg |= 0xF000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1C);
++  // set PCIe Clk/Rst buffer
++  reg = __raw_readl(AST_GPIO_BASE + 0x00);
++  __raw_writel(reg, AST_GPIO_BASE + 0x00);
++  // set GPIOB[7:4] as output
++  reg = __raw_readl(AST_GPIO_BASE + 0x04);
++  reg |= 0xF000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x04);
++
++  // BIOS mux
++  // enable GPIOM[5:3:2] WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x0FC);
++  reg |= 0x2C;
++  __raw_writel(reg, AST_GPIO_BASE + 0x0FC);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++  reg &= 0x0C;
++  if (reg != 0x0C){
++      //set GPIOM[3:2] to output
++      reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++      reg |= 0x0C;
++      __raw_writel(reg, AST_GPIO_BASE + 0x7C);
++  }
++
++  //change GPIOM5:P12V_EN to output
++  reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++  reg &= 0x20;
++  if (reg != 0x20){
++      reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++      reg |= 0x20;
++      __raw_writel(reg, AST_GPIO_BASE + 0x7C);
++  }
++
++  return 0;
++}
++
++static int slot_12V_init(void)
++{
++  u32 slot_present_reg;
++  u32 slot_12v_reg;
++  u32 dir_reg;
++  u32 toler_reg;
++  uint8_t val_prim;
++  uint8_t val_ext;
++  int i;
++
++  //Read GPIOZ0~Z3 and AA0~AA3
++  slot_present_reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  //Read GPIOO4~O7
++  slot_12v_reg = __raw_readl(AST_GPIO_BASE + 0x078);
++
++  for (i = 0; i < MAX_NODES; i++) {
++    val_ext = (slot_present_reg >> (2*MAX_NODES+i)) & 0x1;
++    val_prim = (slot_present_reg >> (4*MAX_NODES+i)) & 0x1;
++
++    if (val_prim || val_ext) {
++      slot_12v_reg &= ~(1<<(5*MAX_NODES+i));
++    } else {
++      slot_12v_reg |= (1<<(5*MAX_NODES+i));
++    }
++  }
++
++  //Set GPIOO4~O7 Watchdog reset tolerance
++  toler_reg = __raw_readl(AST_GPIO_BASE + 0x0FC);
++  toler_reg |= 0xF00000;
++  __raw_writel(toler_reg, AST_GPIO_BASE + 0x0FC);
++
++  //Configure GPIOO4~O7
++  __raw_writel(slot_12v_reg, AST_GPIO_BASE + 0x078);
++  dir_reg = __raw_readl(AST_GPIO_BASE + 0x07C);
++  dir_reg |= 0xF00000;
++  __raw_writel(dir_reg, AST_GPIO_BASE + 0x07C);
++  __raw_writel(slot_12v_reg, AST_GPIO_BASE + 0x078);
++
++
++  /*Copy GPIOO4 behavior to GPIOZ0*/
++  // read GPIOZ0 value
++  slot_12v_reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  slot_12v_reg &= ~0x100; //GPIOZ0 value low , XG1 P12V_STBY_MB_EN_N is low enable
++  __raw_writel(slot_12v_reg, AST_GPIO_BASE + 0x1E0);
++
++  // read GPIOZ0 direction
++  dir_reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  dir_reg |= 0x100; //GPIOZ0  output direction
++  __raw_writel(dir_reg, AST_GPIO_BASE + 0x1E4);
++
++  // set GPIOZ0 Watchdog reset tolerance
++  toler_reg = __raw_readl(AST_GPIO_BASE + 0x18C);
++  toler_reg |= 0x100;
++  __raw_writel(toler_reg, AST_GPIO_BASE + 0x18C);
++
++  return 0;
++}
++
++static int slot_led_init(void)
++{
++  u32 reg;
++  //u32 fan_latch;
++  // u32 slot_present_reg;
++  // uint8_t val_prim;
++  // uint8_t val_ext;
++  // int i;
++
++  // disable GPIOAC0-7
++  reg = __raw_readl(AST_SCU_BASE + 0xAC);
++  reg &= ~0xFF;
++  __raw_writel(reg, AST_SCU_BASE + 0xAC);
++
++  // // read GPIOH5
++  // fan_latch = __raw_readl(AST_GPIO_BASE + 0x020) & 0x20000000;
++  //
++  // //Read GPIOZ0~Z3 and AA0~AA3
++  // slot_present_reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  //
++  // // configure GPIOAC0~AC3, and AC7
++  // reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++  //
++  // for (i = 0; i < MAX_NODES; i++) {
++  //   val_ext = (slot_present_reg >> (2*MAX_NODES+i)) & 0x1;
++  //   val_prim = (slot_present_reg >> (4*MAX_NODES+i)) & 0x1;
++  //
++  //   if (val_prim || val_ext)
++  //     reg &= ~(1 << i);
++  //   else
++  //     reg |= (1 << i);
++  // }
++  //
++  // reg = (fan_latch) ? (reg | 0x80) : (reg & ~0x8F);
++  //
++  // dir_reg = __raw_readl(AST_GPIO_BASE + 0x1EC) | 0x8F;
++  // __raw_writel(dir_reg, AST_GPIO_BASE + 0x1EC);
++  // __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++  return 0;
++}
++
++static int spi_init(void)
++{
++    u32 reg;
++    // enable SPI2 function pin
++    reg = __raw_readl(AST_SCU_BASE + 0x88);
++    reg |= 0x3C000000;
++    __raw_writel(reg, AST_SCU_BASE + 0x88);
++    return 0;
++}
++#endif
++
++
++#if defined(CONFIG_FBAL) || defined(CONFIG_FBSP) || defined(CONFIG_FBEP) || defined(CONFIG_FBY3)
++static void fix_mmc_hold_time_fail(void)
++{
++  u32 reg;
++
++  reg = __raw_readl(AST_SCU_BASE + 0x08);
++  reg &= ~(7 << 12);
++  reg |= (0x01 << 12);
++  __raw_writel(reg, AST_SCU_BASE + 0x08);
++}
++#endif
++
++#if defined(CONFIG_FBAL) || defined(CONFIG_FBSP)
++static void disable_snoop_interrupt(void)
++{
++  u32 reg;
++
++  reg = __raw_readl(AST_LPC_BASE + 0x80);
++  reg &= ~0xA;
++  __raw_writel(reg, AST_LPC_BASE + 0x80);
++
++  __raw_writel(0x0, AST_LPC_BASE + 0x130);
++}
++
++//Config GPIOE pass-through
++static void config_gpioe_pass_through(void) {
++  u32 reg;
++
++  //disable GPIOE Pass-throuth
++  reg = 0x00400000;
++  __raw_writel(reg, AST_SCU_BASE + 0x7C);
++
++  //Enable Reset Button
++  reg = 1 << 12;
++  __raw_writel(reg, AST_SCU_BASE + 0x8C);
++}
++#endif
++
++#if defined(CONFIG_FBAL)
++static void led_init(void)
++{
++  u32 reg;
++
++  // POSTCODE LED (GPIOH)
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  reg |= 0xFF000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x24);
++  reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  reg &= ~0xFF000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x20);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x68);
++  reg |= 0x01000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x68);
++  reg = __raw_readl(AST_GPIO_BASE + 0x6C);
++  reg &= ~0x01000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x6C);
++}
++
++static void enable_nic_mux(void)
++{
++  u32 reg;
++
++  reg = __raw_readl(AST_SCU_BASE + 0xA0);
++  reg |= (1 << 4);
++  __raw_writel(reg, AST_SCU_BASE + 0xA0);
++
++  // enable GPIOT4 WDT reset tolerance
++  reg = __raw_readl(AST_GPIO_BASE + 0x12C);
++  reg |= 0x10000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x12C);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x84);
++  reg |= 0x10000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x84);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x80);
++  reg |= 0x10000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x80);
++}
++
++static int get_fbal_pwrok(void)
++{
++  // GPIOZ1 CPU power good
++  return ((__raw_readl(AST_GPIO_BASE + 0x1E0) >> 9) & 1);
++}
++
++static int is_fbal_master(void)
++{
++  // GPIOO0 High:Slave Low:Master
++  return (((__raw_readl(AST_GPIO_BASE + 0x078) >> 16) & 1) ? 0 : 1 );
++}
++
++static void set_fbal_pwrbtn(int level)
++{
++  u32 reg;
++  // GPIOE3
++  // output
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  __raw_writel(reg | (1 << 3), AST_GPIO_BASE + 0x24);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  if (level) //high
++    reg |= (1<<3);
++  else // low
++    reg &= ~(1<<3);
++  __raw_writel(reg, AST_GPIO_BASE + 0x20);
++}
++
++static void policy_init(void)
++{
++  u32 reg;
++  char *policy = NULL;
++  char *last_state = NULL;
++  char *result;
++  int to_pwr_on = 0;
++
++  // BMC's SCU3C: System Reset Control/Status Register
++  reg = __raw_readl(AST_SCU_BASE + 0x3c);
++  // Power on reset flag(SCU3C[0])
++  // POR flag bit will be cleared at Linux init
++  if (reg & 0x1) {
++    // getenv return the same buffer,
++    // duplicate result before call it again.
++    result = env_get("por_policy");
++    policy = (result) ? strdup(result) : NULL;
++    // printf("%X por_policy:%s\n", policy, policy?policy:"null");
++
++    result = env_get("por_ls");
++    last_state = (result) ? strdup(result) : NULL;
++    // printf("%X por_ls:%s\n", last_state, last_state?last_state:"null");
++
++    if (policy && last_state){
++      if ((!strcmp(policy, "on")) ||
++          (!strcmp(policy, "lps") && !strcmp(last_state, "on"))
++      ) {
++        to_pwr_on = 1;
++      }
++    } else {
++      // default power on if no por config
++      to_pwr_on = 1;
++    }
++  }
++  printf("to_pwr_on: %d, policy:%s, ls:%s, scu3c:%08X\n",
++    to_pwr_on,
++    policy ? policy : "null",
++    last_state ? last_state : "null",
++    reg);
++
++  // Host Server should power on
++  if (to_pwr_on == 1) {
++    // Host Server is not on and Mode is master
++    if ( !get_fbal_pwrok() && is_fbal_master() ) {
++      set_fbal_pwrbtn(0);
++      udelay(1000*1000);
++      set_fbal_pwrbtn(1);
++      udelay(1000*2000);
++      if (!get_fbal_pwrok())
++        printf("!!!! Power On failed !!!!\n");
++    }
++  }
++
++  // free duplicated string buffer
++  if (policy)
++    free(policy);
++  if (last_state)
++    free(last_state);
++}
++#endif
++
++#ifdef CONFIG_FBSP
++static void fan_init(void)
++{
++  u32 reg;
++
++  // enable PWM0 and PWM1 function pin
++  reg = __raw_readl(AST_SCU_BASE + 0x88);
++  reg |= 0x03;
++  __raw_writel(reg, AST_SCU_BASE + 0x88);
++
++  reg = __raw_readl(AST_SCU_BASE + 0x04);
++  reg &= ~0x200;
++  __raw_writel(reg, AST_SCU_BASE + 0x04);
++
++  // set PWM0 and PWM1 to 70%
++  __raw_writel(0x09435F05, AST_PWM_BASE + 0x04);
++  __raw_writel(0x43004300, AST_PWM_BASE + 0x08);
++  __raw_writel(0x00000301, AST_PWM_BASE + 0x00);
++}
++
++static int get_fbsp_pwrok(void)
++{
++  // GPIOY2
++  return ((__raw_readl(AST_GPIO_BASE + 0x1E0) >> 2) & 1);
++}
++
++static void set_fbsp_pwrbtn(int level)
++{
++  u32 reg;
++  // GPIOE3
++  // output
++  reg = __raw_readl(AST_GPIO_BASE + 0x24);
++  __raw_writel(reg | (1 << 3), AST_GPIO_BASE + 0x24);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x20);
++  if (level) //high
++    reg |= (1<<3);
++  else // low
++    reg &= ~(1<<3);
++  __raw_writel(reg, AST_GPIO_BASE + 0x20);
++}
++
++static void policy_init(void)
++{
++  u32 reg;
++  char *policy = NULL;
++  char *last_state = NULL;
++  char *result;
++  int to_pwr_on = 0;
++
++  // BMC's SCU3C: System Reset Control/Status Register
++  reg = __raw_readl(AST_SCU_BASE + 0x3c);
++  // Power on reset flag(SCU3C[0])
++  // POR flag bit will be cleared at Linux init
++  if (reg & 0x1) {
++    // getenv return the same buffer,
++    // duplicate result before call it again.
++    result = env_get("por_policy");
++    policy = (result) ? strdup(result) : NULL;
++
++    result = env_get("por_ls");
++    last_state = (result) ? strdup(result) : NULL;
++
++    if (policy && last_state){
++      if ((!strcmp(policy, "on")) ||
++          (!strcmp(policy, "lps") && !strcmp(last_state, "on"))
++      ) {
++        to_pwr_on = 1;
++      }
++    } else {
++      // default power on if no por config
++      to_pwr_on = 1;
++    }
++  }
++  printf("to_pwr_on: %d, policy:%s, ls:%s, scu3c:%08X\n",
++    to_pwr_on,
++    policy ? policy : "null",
++    last_state ? last_state : "null",
++    reg);
++
++  // Host Server should power on
++  if (to_pwr_on == 1) {
++    // Host Server is not on
++    if (!get_fbsp_pwrok()) {
++      set_fbsp_pwrbtn(0);
++      udelay(1000*1000);
++      set_fbsp_pwrbtn(1);
++      udelay(1000*1000);
++      if (!get_fbsp_pwrok())
++        printf("!!!! Power On failed !!!!\n");
++    }
++  }
++
++  // free duplicated string buffer
++  if (policy)
++    free(policy);
++  if (last_state)
++    free(last_state);
++}
++#endif
++
++#if defined(CONFIG_FBEP)
++static int init_LINKCFG_ASIC(void)
++{
++  struct udevice *dev, *bus;
++  int retry = 2;
++  int ret;
++  u8 addr;
++
++  ret = uclass_get_device_by_name(UCLASS_I2C, "i2c-bus@300", &bus);
++  if (ret) {
++    printf("i2c-7 is not enabled\n");
++    return ret;
++  }
++
++  for (addr = 0x20; addr <= 0x27; addr++) {
++    ret = i2c_get_chip(bus, addr, 1, &dev);
++    if (ret) {
++      printf("Can't find GPIO expander at 0x%02X\n", addr);
++      break;
++    }
++
++    do {
++      // LINK_CONFIG[4:0] = b'01010
++      ret = dm_i2c_reg_write(dev, 0x2, 0xEA);
++      if (ret && retry) {
++	udelay(10000);
++      }
++      ret = dm_i2c_reg_write(dev, 0x6, 0xEA);
++      if (ret && retry) {
++	udelay(10000);
++      }
++
++    } while (ret && (retry-- > 0));
++  }
++
++  return ret;
++}
++
++static int init_PAX_FLASH(void)
++{
++  u32 reg;
++
++  // SPI MUX: GPIOAA0/GPIOAA1/GPIOAA5/GPIOAA6
++  // To output-low
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  reg = reg & ~((0x1 << 16) | (0x1 << 17) | (0x1 << 21) | (0x1 << 22));
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E0);
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  reg = reg | ((0x1 << 16) | (0x1 << 17) | (0x1 << 21) | (0x1 << 22));
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E4);
++
++  return 0;
++}
++
++static int setup_SKU_ID(int server_type)
++{
++  u32 reg;
++
++  // Switch GPIOAC0 GPIOAC2 to GPIO function
++  reg = __raw_readl(AST_SCU_BASE + 0xAC);
++  reg = reg & ~((0x1 << 0) | (0x1 << 2));
++  __raw_writel(reg, AST_SCU_BASE + 0xAC);
++
++  // SKU ID0: GPIOB0/GPIOB4/GPIOAC0/GPIOAC2
++  // SKU ID1: GPIOB6/GPIOB7/GPIOM0/GPIOM6
++  // To ouput
++  reg = __raw_readl(AST_GPIO_BASE + 0x04);
++  reg = reg | ((0x1 << 8) | (0x1 << 12) | (0x1 << 14) | (0x1 << 15));
++  __raw_writel(reg, AST_GPIO_BASE + 0x04);
++  reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++  reg = reg | ((0x1 << 0) | (0x1 << 6));
++  __raw_writel(reg, AST_GPIO_BASE + 0x7C);
++  reg = __raw_readl(AST_GPIO_BASE + 0x1EC);
++  reg = reg | ((0x1 << 0) | (0x1 << 2));
++  __raw_writel(reg, AST_GPIO_BASE + 0x1EC);
++
++  if (server_type == 8) {
++    // 4S: SKU ID[0:1] = 01'b
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg & ~((0x1 << 8) | (0x1 << 12));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++    reg = reg & ~((0x1 << 0) | (0x1 << 2));
++    __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg | ((0x1 << 14) | (0x1 << 15));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++    reg = __raw_readl(AST_GPIO_BASE + 0x78);
++    reg = reg | ((0x1 << 0) | (0x1 << 6));
++    __raw_writel(reg, AST_GPIO_BASE + 0x78);
++
++  } else if (server_type == 4) {
++    // 4SEX: SKU ID[0:1] = 00'b
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg & ~((0x1 << 8) | (0x1 << 12));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++    reg = reg & ~((0x1 << 0) | (0x1 << 2));
++    __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg & ~((0x1 << 14) | (0x1 << 15));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++    reg = __raw_readl(AST_GPIO_BASE + 0x78);
++    reg = reg & ~((0x1 << 0) | (0x1 << 6));
++    __raw_writel(reg, AST_GPIO_BASE + 0x78);
++
++  } else if (server_type == 2) {
++    // 2S: SKU ID[0:1] = 10'b
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg | ((0x1 << 8) | (0x1 << 12));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++    reg = reg | ((0x1 << 0) | (0x1 << 2));
++    __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++    reg = __raw_readl(AST_GPIO_BASE + 0x00);
++    reg = reg & ~((0x1 << 14) | (0x1 << 15));
++    __raw_writel(reg, AST_GPIO_BASE + 0x00);
++    reg = __raw_readl(AST_GPIO_BASE + 0x78);
++    reg = reg & ~((0x1 << 0) | (0x1 << 6));
++    __raw_writel(reg, AST_GPIO_BASE + 0x78);
++
++  } else {
++    return -1;
++  }
++
++  return 0;
++}
++
++static int init_SKU_ID_PAX(void)
++{
++  struct udevice *dev, *bus;
++  int server_type = -1;
++  int retry = 2;
++  int ret;
++  char mode[8] = {0};
++
++  ret = uclass_get_device_by_name(UCLASS_I2C, "i2c-bus@1c0", &bus);
++  if (ret) {
++    printf("i2c-6 is not enabled\n");
++    return ret;
++  }
++
++  ret = i2c_get_chip(bus, 0x54, 2, &dev);
++  if (ret) {
++    printf("Can't find MB EEPROM\n");
++    return ret;
++  }
++
++  do {
++    server_type = dm_i2c_reg_read(dev, 1030);
++    if (server_type < 0 && retry) {
++      udelay(10000);
++    }
++  } while (server_type < 0 && (retry-- > 0));
++
++  printf("Server type: ");
++  if (server_type == 2) {
++    snprintf(mode, sizeof(mode), "2S");
++  } else if (server_type == 4) {
++    snprintf(mode, sizeof(mode), "4SEX");
++  } else if (server_type == 8) {
++    snprintf(mode, sizeof(mode), "4S");
++  } else {
++    printf("Unknown\n");
++    return -1;
++  }
++  printf("%s Socket mode\n", mode);
++  return setup_SKU_ID(server_type);
++}
++
++static void init_ASIC_PAX(void)
++{
++  u32 reg;
++
++  // Release AST SMBus reset
++  reg = __raw_readl(AST_SCU_BASE + 0x04);
++  reg &= ~(0x1 << 2);
++  __raw_writel(reg, AST_SCU_BASE + 0x04);
++
++  if (init_LINKCFG_ASIC() < 0 ||
++      init_SKU_ID_PAX() < 0 ||
++      init_PAX_FLASH() < 0)
++    return;
++
++  // Assume server is present
++  // GPIOM1 (PWR_CTRL) to output-low
++  reg = __raw_readl(AST_GPIO_BASE + 0x7C);
++  reg |= (0x1 << 1);
++  __raw_writel(reg, AST_GPIO_BASE + 0x7C);
++  reg = __raw_readl(AST_GPIO_BASE + 0x78);
++  reg &= ~(0x1 << 1);
++  __raw_writel(reg, AST_GPIO_BASE + 0x78);
++
++  // GPIOB2 (BMC_READY) to output-low
++  reg = __raw_readl(AST_GPIO_BASE + 0x04);
++  reg |= (0x1 << 10);
++  __raw_writel(reg, AST_GPIO_BASE + 0x04);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x00);
++  reg &= ~(0x1 << 10);
++  __raw_writel(reg, AST_GPIO_BASE + 0x00);
++}
++#endif
++
++#if defined (CONFIG_FBCC)
++static void init_SEL_FLASH_PAX(void)
++{
++  u32 reg;
++  // set GPIOAA0 AA1 AA5 AA6 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  reg |= 0x00630000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E4);
++  // set GPIOAA0 AA1 AA5 AA6 value 0
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  reg &= 0xFF9CFFFF;
++  __raw_writel(reg, AST_GPIO_BASE + 0x0D8);
++}
++
++static void init_SKU_ID_PAX(void)
++{
++  u32 reg;
++  // set GPIOB0 B4 AA5 B6 B7 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x004);
++  reg |= 0x0000D100;
++  __raw_writel(reg, AST_GPIO_BASE + 0x004);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x000);
++  reg &= 0xFFFF3EFF;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x0C0);
++  __raw_writel(reg, AST_GPIO_BASE + 0x000);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x000);
++  reg |= 0x00001000;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x0C0);
++  __raw_writel(reg, AST_GPIO_BASE + 0x000);
++
++  // set GPIOM0 M6 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x07C);
++  reg |= 0x00000041;
++  __raw_writel(reg, AST_GPIO_BASE + 0x07C);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x078);
++  reg |= 0x00000041;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x0CC);
++  __raw_writel(reg, AST_GPIO_BASE + 0x078);
++
++  // set GPIOAC0 AC2 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1EC);
++  reg |= 0x5;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1EC);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++  reg &= 0xFFFFFFF0;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x0DC);
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++  reg |= 0x00000004;
++  // __raw_writel(reg, AST_GPIO_BASE + 0x0DC);
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++}
++
++static void init_MUX_RESET_PIN(void)
++{
++  u32 reg;
++  // set GPIOL5 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x074);
++  reg |= 0x20000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x074);
++  // set GPIOL5 value 1
++  reg = __raw_readl(AST_GPIO_BASE + 0x070);
++  reg |= 0x20000000;
++  __raw_writel(reg, AST_GPIO_BASE + 0x070);
++
++    // set GPIOY0 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E4);
++  reg |= 0x00000001;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E4);
++  // set GPIOY0 value 1
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E0);
++  reg |= 0x00000001;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E0);
++}
++
++static void init_CPLD_POWER_ON(void)
++{
++  u32 reg;
++
++  // enable GPIOAC1
++  reg = __raw_readl(AST_SCU_BASE + 0xAC);
++  reg &= ~0x02;
++  __raw_writel(reg, AST_SCU_BASE + 0xAC);
++
++  // set GPIOAC1 direction output
++  reg = __raw_readl(AST_GPIO_BASE + 0x1EC);
++  reg |= 0x00000002;
++  __raw_writel(reg, AST_GPIO_BASE + 0x1EC);
++
++  reg = __raw_readl(AST_GPIO_BASE + 0x1E8);
++  reg &= 0xFFFFFFFD;
++  // set GPIOAC1 value 0
++  __raw_writel(reg, AST_GPIO_BASE + 0x1E8);
++}
++
++#endif
++
++int board_init(void)
++{
++#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG)
++	dual_boot_watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#else
++	watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#endif
++	vboot_check_enforce();
++
++#if defined(CONFIG_FBTP) || defined(CONFIG_PWNEPTUNE)
++  fan_init();
++  policy_init();
++  disable_bios_debug();
++  disable_snoop_dma_interrupt();
++#endif
++
++#ifdef CONFIG_FBY2
++  fan_init();
++  mux_init();
++  slot_12V_init();
++  slot_led_init();
++#endif
++
++#ifdef CONFIG_FBY3
++  slot_12V_init();
++#endif
++
++#ifdef CONFIG_MINILAKETB
++  fan_init();
++  mux_init();
++  slot_12V_init();
++  slot_led_init();
++  spi_init();
++#endif
++
++#if defined(CONFIG_FBAL)
++  config_gpioe_pass_through();
++  policy_init();
++  disable_snoop_interrupt();
++  led_init();
++  enable_nic_mux();
++  fix_mmc_hold_time_fail();
++#endif
++
++#if defined(CONFIG_FBSP)
++  fan_init();
++  config_gpioe_pass_through();
++  policy_init();
++  disable_snoop_interrupt();
++  fix_mmc_hold_time_fail();
++#endif
++
++#if defined(CONFIG_FBEP)
++  fix_mmc_hold_time_fail();
++  init_ASIC_PAX();
++#endif
++
++#if defined(CONFIG_FBY3)
++  fix_mmc_hold_time_fail();
++#endif
++
++#if defined(CONFIG_FBCC)
++  init_SEL_FLASH_PAX();
++  init_SKU_ID_PAX();
++  init_MUX_RESET_PIN();
++  init_CPLD_POWER_ON();
++#endif
++
++  gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
++
++  return 0;
++}
++
++int dram_init(void)
++{
++	u32 vga = ast_scu_get_vga_memsize();
++	u32 dram = ast_sdmc_get_mem_size();
++	gd->ram_size = dram - vga;
++#ifdef CONFIG_DRAM_ECC
++	gd->ram_size -= gd->ram_size >> 3; /* need 1/8 for ECC */
++#endif
++	return 0;
++}
++
++#ifdef CONFIG_ASPEEDNIC
++int board_eth_init(bd_t *bd)
++{
++  return aspeednic_initialize(bd);
++}
++#endif
+diff --git a/board/wb-obmc/ast/ast-g5.h b/board/wb-obmc/ast/ast-g5.h
+new file mode 100644
+index 00000000..5f185b02
+--- /dev/null
++++ b/board/wb-obmc/ast/ast-g5.h
+@@ -0,0 +1,40 @@
++/*
++ * Copyright 2016 IBM Corporation
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++#ifndef _AST_G5_H
++#define _AST_G5_H
++
++#define PRODUCT_INFO_LEN     (64)
++#define MAC_ADDR_LENGTH      (6)
++#define ETH_NAME_MAX_LEN     (32)
++
++#define IS_PCA9641      0
++#define NOT_PCA9641     1
++
++#define E2_TLV          0
++#define E2_FRU          1
++
++typedef struct eeprom_list_s {
++    int bus;
++    int addr;
++    int is_pca9641;
++    int e2_type;
++} eeprom_list_t;
++
++typedef struct dev_info_s {
++    int dev_type;                          /* product-id */
++    int tx_delay;
++    int rx_delay;
++    char eth_prime[ETH_NAME_MAX_LEN];
++    char dev_name[PRODUCT_INFO_LEN];       /* product name */
++    char conffit_name[PRODUCT_INFO_LEN];   /* dts file name*/
++    int mac_addr_valid_flag;               /* Valid MAC address indicates a valid MAC address */
++    u_int8_t mac_addr[MAC_ADDR_LENGTH];    /* MAC address */
++} dev_info_t;
++
++#endif/* _AST_G5_H */
+diff --git a/board/wb-obmc/ast/ast-g6.c b/board/wb-obmc/ast/ast-g6.c
+new file mode 100644
+index 00000000..94dcbcb6
+--- /dev/null
++++ b/board/wb-obmc/ast/ast-g6.c
+@@ -0,0 +1,108 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) 2021 Facebook Inc.
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/arch/timer.h>
++#include <linux/bitops.h>
++#include <linux/err.h>
++#include <dm/uclass.h>
++#include "util.h"
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#ifdef CONFIG_FBGC
++static void system_status_led_init(void)
++{
++	/* GPIO088: GPIO_U/V/W/X Data Value Register
++	 * 31:24 Port GPIOX[7:0] data register
++	 * 23:16 Port GPIOW[7:0] data register
++	 * 15:8 Port GPIOV[7:0] data register
++	 * 7:0 Port GPIOU[7:0] data register
++	 */
++	u32 value = readl(0x1e780088);
++	/* GPIO08C: GPIO_U/V/W/X Direction Value Register
++	 * 31:24 Port GPIOX[7:0] direction control
++	 * 0: Select input mode 1: Select output mode
++	 * 23:16 Port GPIOW[7:0] direction control
++	 * 0: Select input mode 1: Select output mode
++	 * 15:8 Port GPIOV[7:0] direction control
++	 * 0: Select input mode 1: Select output mode
++	 * 7:0 Reserved
++	 * GPIOU is input only
++	 */
++	u32 direction = readl(0x1e78008C);
++
++	/* GPIOV4: BMC_LED_STATUS_BLUE_EN_R
++	 * 0: LED OFF 1:LED ON BLUE
++	 * GPIOV5: BMC_LED_STATUS_YELLOW_EN_R
++	 * 0: LED ON YELLOW 1:LED OFF
++	 */
++	direction |= 0x3000; // set GPIOV4 & GPIOV5 direction output
++	value &= 0xFFFFCFFF; // set GPIOV4 & GPIOV5 value 0
++	writel(direction, 0x1e78008C);
++	writel(value, 0x1e780088);
++}
++
++#endif /* CONFIG_FBGC */
++
++#ifdef CONFIG_ELBERTVBOOT
++extern void configureBcm53134(void);
++#endif
++
++int board_init(void)
++{
++	struct udevice *dev;
++	int i;
++	int ret;
++	u64 rev_id;
++	u32 tmp_val;
++
++	/* disable address remapping for A1 to prevent secure boot reboot failure */
++	rev_id = readl(ASPEED_REVISION_ID0);
++	rev_id = ((u64)readl(ASPEED_REVISION_ID1) << 32) | rev_id;
++
++	if (rev_id == 0x0501030305010303 || rev_id == 0x0501020305010203) {
++		if ((readl(ASPEED_SB_STS) & BIT(6))) {
++			tmp_val = readl(0x1e60008c) & (~BIT(0));
++			writel(0xaeed1a03, 0x1e600000);
++			writel(tmp_val, 0x1e60008c);
++			writel(0x1, 0x1e600000);
++		}
++	}
++
++	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
++
++#if CONFIG_IS_ENABLED(ASPEED_ENABLE_DUAL_BOOT_WATCHDOG)
++	dual_boot_watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#else
++	watchdog_init(CONFIG_ASPEED_WATCHDOG_TIMEOUT);
++#endif
++
++	/*
++	 * Loop over all MISC uclass drivers to call the comphy code
++	 * and init all CP110 devices enabled in the DT
++	 */
++	i = 0;
++	while (1) {
++		/* Call the comphy code via the MISC uclass driver */
++		ret = uclass_get_device(UCLASS_MISC, i++, &dev);
++
++		/* We're done, once no further CP110 device is found */
++		if (ret)
++			break;
++	}
++
++	vboot_check_enforce();
++
++#ifdef CONFIG_FBGC
++	system_status_led_init();
++#endif /* CONFIG_FBGC */
++
++#ifdef CONFIG_ELBERVBOOT
++	configureBcm53134();
++#endif /* ELBERT specific */
++	return 0;
++}
+diff --git a/board/wb-obmc/ast/elbert.c b/board/wb-obmc/ast/elbert.c
+new file mode 100644
+index 00000000..e612f870
+--- /dev/null
++++ b/board/wb-obmc/ast/elbert.c
+@@ -0,0 +1,176 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) 2020 Facebook Inc.
++ */
++
++#include <common.h>
++#include <asm/io.h>
++
++/* SCU Base Address */
++#define AST_SCU_VA_BASE 0x1E6E2000
++/* PMI Base Address */
++#define AST_PMI_VA_BASE 0x1E650000
++
++#define SCU_RESET_SET2_REG (AST_SCU_VA_BASE + 0x50)
++#define SCU_RESET_CLEAR2_REG (AST_SCU_VA_BASE + 0x54)
++#define SCU_PIN_CONTROL8_REG (AST_SCU_VA_BASE + 0x430)
++#define SCU_HW_STRAPPING_REG (AST_SCU_VA_BASE + 0x510)
++#define SCU_HW_CLEAR_STRAPPING_REG (AST_SCU_VA_BASE + 0x514)
++
++#define PMI_MDC_MDIO_CONTROL_REG (AST_PMI_VA_BASE + 0x00)
++#define PMI_MDC_MDIO_READ_DATA_REG (AST_PMI_VA_BASE + 0x04)
++
++
++/* SCU[50] */
++#define SCU_RESET_MII_CONTROLLER (1 << 3) /* Reset the MII controller */
++
++/* SCU[430] */
++#define SCU_ENABLE_MDC_PIN (1 << 16) /* Enable MDC */
++#define SCU_ENABLE_MDIO_PIN (1 << 17) /* Enable MDIO */
++
++/* MDIO OOB */
++#define MDIO_OOB_PAGE_REG 16
++#define MDIO_OOB_ADDR_REG 17
++#define MDIO_OOB_DATA_REG 24
++
++#define MDIO_UDELAY 10
++#define OOB_CONTROL_PAGE 0x0
++#define OOB_IMP_PORT_STATE_REG 0xe
++#define OOB_IMP_RGMII_CONTROL_REG 0x60
++
++static void mdio_init(void)
++{
++	unsigned long val;
++	*(volatile unsigned long *)(SCU_RESET_CLEAR2_REG) =
++		SCU_RESET_MII_CONTROLLER;
++
++	val = *(volatile unsigned long *)(SCU_PIN_CONTROL8_REG);
++	val |= (SCU_ENABLE_MDC_PIN | SCU_ENABLE_MDIO_PIN);
++	*(volatile unsigned long *)(SCU_PIN_CONTROL8_REG) = val;
++}
++
++static void mdio_restore(void)
++{
++	unsigned long val;
++	*(volatile unsigned long *)(SCU_RESET_SET2_REG) =
++		SCU_RESET_MII_CONTROLLER;
++
++	val = *(volatile unsigned long *)(SCU_PIN_CONTROL8_REG);
++	val &= ~(SCU_ENABLE_MDC_PIN | SCU_ENABLE_MDIO_PIN);
++	*(volatile unsigned long *)(SCU_PIN_CONTROL8_REG) = val;
++}
++
++static int mdio_wait_op_complete(unsigned int reg_addr, unsigned long mask,
++			  unsigned long wait_val)
++{
++	int maxTries = 30;
++	int i;
++	unsigned long val;
++	for (i = 0; i < maxTries; ++i) {
++		val = *(volatile unsigned long *)reg_addr;
++		if ((val & mask) == wait_val) {
++			return 0;
++		}
++		udelay(MDIO_UDELAY);
++	}
++	return -1;
++}
++
++/* mdio_read returns register values between 0x0 and 0xffff
++   in the case of success and -1 in the case of failure. */
++static int mdio_read(unsigned long addr)
++{
++	unsigned long reg_val;
++	unsigned long fire_busy = 1 << 31;
++	unsigned long ctrl_idle = 1 << 16;
++
++	reg_val = fire_busy | (1 << 28) /* clause_22 */
++		  | (1 << 27) /* read request */
++		  | (0x1e << 21) /* pseudo-phy port address */
++		  | (addr << 16);
++	*(volatile unsigned long *)(PMI_MDC_MDIO_CONTROL_REG) = reg_val;
++	if (mdio_wait_op_complete(PMI_MDC_MDIO_READ_DATA_REG, ctrl_idle,
++				  ctrl_idle)) {
++		return -1;
++	}
++	reg_val = *(volatile unsigned long *)(PMI_MDC_MDIO_READ_DATA_REG);
++	return (int)(reg_val & 0xffff);
++}
++
++static int mdio_write(unsigned long addr, unsigned long val)
++{
++	unsigned long reg_val;
++	unsigned long fire_busy = 1 << 31;
++
++	reg_val = fire_busy | (1 << 28) /* clause_22 */
++		  | (1 << 26) /* write request */
++		  | (0x1e << 21) /* pseudo-phy port address */
++		  | (addr << 16) | val;
++	*(volatile unsigned long *)(PMI_MDC_MDIO_CONTROL_REG) = reg_val;
++	return mdio_wait_op_complete(PMI_MDC_MDIO_CONTROL_REG, fire_busy, 0);
++}
++
++static int reg_wait_addr_reg_acked(void)
++{
++	int maxTries = 30;
++	int i;
++	int response;
++	unsigned long op;
++	for (i = 0; i < maxTries; ++i) {
++		response = mdio_read(MDIO_OOB_ADDR_REG);
++		if (response < 0) {
++			return -1;
++		}
++		op = ((unsigned long)response) & 0x3;
++		if (!op) {
++			return 0;
++		}
++		udelay(MDIO_UDELAY);
++	}
++	return -1;
++}
++
++static int program_oob_register(unsigned long page, unsigned long addr,
++			 unsigned long val)
++{
++	unsigned long data;
++
++	data = (page << 8) | 0x1 /* access enable */;
++	if (mdio_write(MDIO_OOB_PAGE_REG, data)) {
++		return -1;
++	}
++	if (mdio_write(MDIO_OOB_DATA_REG, val)) {
++		return -1;
++	}
++	data = (addr << 8) | 0x1 /* write op */;
++	if (mdio_write(MDIO_OOB_ADDR_REG, data)) {
++		return -1;
++	}
++
++	if (reg_wait_addr_reg_acked()) {
++		return -1;
++	}
++
++	data = 0x0 /* access disable */;
++	if (mdio_write(MDIO_OOB_PAGE_REG, data)) {
++		return -1;
++	}
++
++	return 0;
++}
++
++/* Configure the BCM53134 registers to 1G */
++void configureBcm53134(void)
++{
++	/* Initialize the MDIO controller for programming */
++	mdio_init();
++
++	/* These values set the speed to 1G, overriding the default settings in the
++       EEPROM */
++	program_oob_register(OOB_CONTROL_PAGE, OOB_IMP_PORT_STATE_REG, 0x8b);
++	program_oob_register(OOB_CONTROL_PAGE, OOB_IMP_RGMII_CONTROL_REG, 0x0);
++
++	/* Restore the MDIO controller setting */
++	mdio_restore();
++}
++
+diff --git a/board/wb-obmc/ast/flash-spl.c b/board/wb-obmc/ast/flash-spl.c
+new file mode 100644
+index 00000000..60925095
+--- /dev/null
++++ b/board/wb-obmc/ast/flash-spl.c
+@@ -0,0 +1,425 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++#define DEBUG
++#include <common.h>
++#include <malloc.h>
++#include <timer.h>
++#include <stdio.h>
++#include <asm/io.h>
++
++#include <asm/arch/platform.h>
++#include "flash-spl.h"
++
++/* defines migrate to upsteam/new-sdk */
++#define ASPEED_FMC_CS1_BASE (ASPEED_FMC_CS0_BASE + 0x8000000)
++
++#define AST_FMC_WRITE_ENABLE 0x800f0000
++
++/* ===================== AST2600 FMC_CEn_CTRL Default ========================*/
++#if defined(CONFIG_ASPEED_AST2600)
++/*
++ *  set to power on default value
++ */
++#define AST_FMC_STATUS_RESET 0x00000400
++/* ===================== AST2500 FMC_CEn_CTRL Default ========================*/
++#elif defined(CONFIG_FBAL) || defined(CONFIG_FBEP) || defined(CONFIG_FBY3) ||  \
++	defined(CONFIG_FBCC)
++/* Workaround slow down SPI clk to 40 Mhz */
++#define AST_FMC_STATUS_RESET 0x000b0d41
++#elif defined(CONFIG_FBSP)
++/* Workaround slow down SPI clk to 12 Mhz */
++#define AST_FMC_STATUS_RESET 0x000b0041
++#else
++#define AST_FMC_STATUS_RESET 0x000b0641
++#endif
++
++#define AST_FMC_CE1_CONTROL 0x14
++#define AST_FMC_CE0_CONTROL 0x10
++#define AST_FMC_CE_CONTROL 0x04
++
++#define SPI_CMD_ID 0x9f
++#define SPI_CMD_3B 0xe9
++#define SPI_CMD_4B 0xb7
++#define SPI_CMD_WE 0x06
++#define SPI_CMD_RS 0x05
++#define SPI_CMD_WS 0x01
++#define SPI_CMD_RC 0x15
++
++#define SPI_SRWD (0x1 << 7)
++#define SPI_BP3 (0x1 << 5)
++#define SPI_BP2 (0x1 << 4)
++#define SPI_BP1 (0x1 << 3)
++#define SPI_BP0 (0x1 << 2)
++#define SPI_WEL (0x1 << 1)
++#define SPI_WIP (0x1 << 0)
++
++/* Status register Top/Bottom bit select */
++#define SPI_TB (0x1 << 6)
++
++/* Lock top 32MB of CS0 */
++#define SPI_CS0_HW_PROTECTIONS (SPI_BP1 | SPI_BP3)
++/* Lock top 64KB of CS1 */
++#define SPI_CS1_HW_PROTECTIONS (SPI_BP0)
++
++/* Micron Tech */
++#define SPI_BP3_MT (0x1 << 6)
++#define SPI_TB_MT (0x1 << 5)
++
++#define WRITEREG(r, v) *(volatile u32 *)(r) = v
++#define WRITEB(r, b) *(volatile uchar *)(r) = (uchar)b
++#define READREG(r) *(volatile u32 *)(r)
++#define READB(r) *(volatile uchar *)(r)
++
++typedef int (*heaptimer_t)(unsigned ulong);
++typedef int (*heapstatus_t)(heaptimer_t, uchar, bool);
++
++#pragma GCC push_options
++#pragma GCC optimize("O0")
++
++inline void fmc_enable_write(void)
++{
++	/* If FMC00:{16, 17, 18} is 0 then it needs to be enabled with FMCA4. */
++	/* Set FMCA4 to |= 2AA */
++	WRITEREG(ASPEED_FMC_BASE,
++		 READREG(ASPEED_FMC_BASE) | AST_FMC_WRITE_ENABLE);
++}
++
++inline void fmc_reset(u32 ctrl)
++{
++	WRITEREG(ASPEED_FMC_BASE + ctrl, AST_FMC_STATUS_RESET);
++}
++
++#if !defined(CONFIG_ASPEED_AST2600) /* 4B mode enable setup in board_init*/
++inline void fmc_enable4b(uchar cs)
++{
++	WRITEREG(ASPEED_SCU_BASE + 0x70,
++		 READREG(ASPEED_SCU_BASE + 0x70) | 0x10);
++	WRITEREG(ASPEED_FMC_BASE + AST_FMC_CE_CONTROL,
++		 READREG(ASPEED_FMC_BASE + AST_FMC_CE_CONTROL) | (0x01 << cs));
++}
++#else
++#define fmc_enable4b(cs)
++#endif
++
++#if !defined(CONFIG_ASPEED_AST2600) /* AST2600 did not multi-func FMC-CS pins*/
++#define AST_SCU_FUN_PIN_CTRL3 0x88
++#define SCU_FUN_PIN_ROMCS(x) (0x1 << (23 + x))
++inline void fmc_romcs(uchar cs)
++{
++	u32 function_pin = READREG(ASPEED_SCU_BASE + AST_SCU_FUN_PIN_CTRL3);
++	function_pin |= SCU_FUN_PIN_ROMCS(cs);
++	WRITEREG(ASPEED_SCU_BASE, SCU_PROTECT_UNLOCK);
++	WRITEREG(ASPEED_SCU_BASE + AST_SCU_FUN_PIN_CTRL3, function_pin);
++}
++#else
++#define fmc_romcs(cs)
++#endif
++
++inline void spi_write_enable(heaptimer_t timer, u32 base, u32 ctrl)
++{
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_WE);
++	timer(10);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++}
++
++inline uchar spi_status(heaptimer_t timer, u32 base, u32 ctrl, bool wel)
++{
++	uchar r1;
++	u32 timeout;
++
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_RS);
++	timer(10);
++	timeout = 8000;
++	do {
++		if (--timeout == 0) {
++			r1 = 0xFF;
++			break;
++		}
++		r1 = READB(base);
++	} while ((wel && !(r1 & SPI_WEL)) || (!wel && (r1 & SPI_WIP)));
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++	return r1;
++}
++
++inline void spi_write_config(heaptimer_t timer, u32 base, u32 ctrl, uchar p)
++{
++	uchar r1;
++
++	/* The 'configuration' register on MXIC chips is the second status byte. */
++	r1 = spi_status(timer, base, ctrl, false);
++
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_WS);
++	timer(10);
++	/* Must write the status register first. */
++	WRITEB(base, r1);
++	WRITEB(base, p);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++}
++
++inline uchar spi_config(heaptimer_t timer, u32 base, u32 ctrl)
++{
++	uchar r1;
++
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_RC);
++	timer(10);
++	r1 = READB(base);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++	return r1;
++}
++
++inline void spi_write_status(heaptimer_t timer, u32 base, u32 ctrl, uchar p)
++{
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_WS);
++	timer(10);
++	WRITEB(base, p);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++}
++
++inline void spi_enable4b(heaptimer_t timer, u32 base, u32 ctrl)
++{
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_4B);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++}
++
++inline void spi_id(heaptimer_t timer, u32 base, u32 ctrl, uchar *ch)
++{
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x03);
++	timer(200);
++	WRITEB(base, SPI_CMD_ID);
++	timer(10);
++	ch[0] = READB(base);
++	timer(10);
++	ch[1] = READB(base);
++	timer(10);
++	ch[2] = READB(base);
++	WRITEREG(ASPEED_FMC_BASE + ctrl, 0x07);
++	timer(200);
++}
++
++inline void set_topbottom_mxic(heaptimer_t timer, u32 base, u32 ctrl)
++{
++	uchar r1;
++
++	r1 = spi_config(timer, base, ctrl);
++	spi_write_config(timer, base, ctrl, r1 | (0x1 << 3));
++
++	/* Wait for the WIP/Busy to clear */
++	(void)spi_status(timer, base, ctrl, false);
++}
++
++#define ASPEED_TIMER1_STS_REG (ASPEED_TIMER_BASE)
++int heaptimer(unsigned long usec)
++{
++	ulong last;
++	ulong clks;
++	ulong elapsed;
++	ulong now;
++
++	/* translate usec to clocks */
++	clks = (usec / 1000) * (CONFIG_ASPEED_TIMER_CLK / CONFIG_SYS_HZ);
++	clks += (usec % 1000) * (CONFIG_ASPEED_TIMER_CLK / CONFIG_SYS_HZ) /
++		1000;
++
++	elapsed = 0;
++	now = 0;
++	last = READREG(ASPEED_TIMER1_STS_REG);
++	while (clks > elapsed) {
++		now = READREG(ASPEED_TIMER1_STS_REG);
++		if (now <= last) {
++			elapsed += last - now;
++		} else {
++			elapsed += 0xffffffff - (now - last);
++		}
++		last = now;
++	}
++	return 1;
++}
++
++int heaptimer_end(void)
++{
++	return 0;
++}
++
++int doheap(heaptimer_t timer, uchar cs, bool should_lock)
++{
++	uchar status_set, status_check;
++	uchar id[3] = { 0 };
++	u32 base;
++	u32 ctrl;
++	u32 prot;
++
++	if (cs == 0) {
++		base = ASPEED_FMC_CS0_BASE;
++		ctrl = AST_FMC_CE0_CONTROL;
++		prot = SPI_CS0_HW_PROTECTIONS;
++	} else {
++		base = ASPEED_FMC_CS1_BASE;
++		ctrl = AST_FMC_CE1_CONTROL;
++		prot = SPI_CS1_HW_PROTECTIONS;
++	}
++
++	fmc_romcs(cs);
++
++	/* Set the T/B bit based on the chip vendor. */
++	spi_id(timer, base, ctrl, id);
++
++	if (id[0] == 0xC2) {
++		/* This is MX */
++		spi_write_enable(timer, base, ctrl);
++		spi_status(timer, base, ctrl, true);
++		set_topbottom_mxic(timer, base, ctrl);
++	} else if (id[0] == 0xEF || id[0] == 0xC8) {
++		/* WB or GD */
++		prot |= SPI_TB;
++	} else if (id[0] == 0x20) {
++		/* MT */
++		if (cs == 0) {
++			prot = (SPI_BP3_MT | SPI_BP1);
++		}
++		prot |= SPI_TB_MT;
++	} else {
++		return AST_FMC_ERROR;
++	}
++
++	/* Set the status register write disable. Only effective if WP# is low. */
++	if (should_lock) {
++		prot |= SPI_SRWD;
++	}
++
++	/* Try write protect CSn */
++	spi_write_enable(timer, base, ctrl);
++	spi_status(timer, base, ctrl, true);
++
++	spi_write_status(timer, base, ctrl, prot);
++	status_set = spi_status(timer, base, ctrl, false);
++
++	/* Disable write protection for CSn */
++	spi_write_enable(timer, base, ctrl);
++	spi_status(timer, base, ctrl, true);
++	spi_write_status(timer, base, ctrl, 0x0);
++	status_check = spi_status(timer, base, ctrl, false);
++
++	/* Set the SPI into 32bit addressing mode. */
++	fmc_enable4b(cs);
++	timer(200);
++
++	spi_enable4b(timer, base, ctrl);
++
++	/* Reset the FMC state. */
++	fmc_reset(ctrl);
++	timer(200);
++
++	if (status_set == 0xFF || status_check == 0xFF) {
++		return AST_FMC_ERROR;
++	} else if ((status_set & prot) != prot) {
++		return AST_FMC_ERROR;
++	} else if ((status_check & prot) != prot) {
++		return AST_FMC_WP_OFF;
++	}
++	return AST_FMC_WP_ON;
++}
++
++int doheap_end(void)
++{
++	return 0;
++}
++
++#if defined(CONFIG_ASPEED_AST2600)
++#define ASPEED_TIMER1_RELOAD_VAL 0xFFFFFFFF
++#define ASPEED_TIMER1_RELOAD_REG (ASPEED_TIMER_BASE + 0x04)
++#define ASPEED_TIMER_CTRL_REG (ASPEED_TIMER_BASE + 0x30)
++#define ASPEED_TIMER_CLER_REG (ASPEED_TIMER_BASE + 0x3C)
++#define ASPEED_TIMER1_EN (1 << 0)
++#define ASPEED_TIMER1_1MHZ (1 << 1)
++
++static int ast2600_start_timer1(void)
++{
++	writel(ASPEED_TIMER1_RELOAD_VAL, ASPEED_TIMER1_RELOAD_REG);
++
++	/*
++	 * Stop the timer. This will also load reload_val into
++	 * the status register.
++	 */
++	setbits_le32(ASPEED_TIMER_CLER_REG, ASPEED_TIMER1_EN);
++	/* Start the timer from the fixed 1MHz clock. */
++	setbits_le32(ASPEED_TIMER_CTRL_REG,
++		     (ASPEED_TIMER1_EN | ASPEED_TIMER1_1MHZ));
++
++	return 0;
++}
++#endif
++
++int ast_fmc_spi_check(bool should_lock)
++{
++	u32 function_size;
++	uchar *buffer;
++	int cs0_status, cs1_status;
++	int ret;
++
++	heaptimer_t timer_fp;
++	heapstatus_t spi_check;
++
++	u32 ce0_ctrl = readl(ASPEED_FMC_BASE + AST_FMC_CE0_CONTROL);
++	u32 ce1_ctrl = readl(ASPEED_FMC_BASE + AST_FMC_CE1_CONTROL);
++	debug("Before: CE0_CTRL=0x%08X, CE1_CTRL=0x%08X\n", ce0_ctrl, ce1_ctrl);
++#if defined(CONFIG_ASPEED_AST2600)
++	ret = ast2600_start_timer1();
++#else
++	ret = dm_timer_init();
++#endif
++	if (ret) {
++		debug("timer init failed (%d)\n", ret);
++	}
++	fmc_enable_write();
++
++	/* Place a timer function into SRAM */
++	function_size = (u32)((uchar *)heaptimer_end - (uchar *)heaptimer);
++	buffer = (uchar *)malloc(function_size);
++	if (!buffer) {
++		debug("malloc buffer failed\n");
++		return AST_FMC_ERROR;
++	}
++	memcpy(buffer, (uchar *)heaptimer, function_size);
++	timer_fp = (heaptimer_t)buffer;
++
++	/* Place our SPI inspections into SRAM */
++	function_size = (u32)((uchar *)doheap_end - (uchar *)doheap);
++	buffer = (uchar *)malloc(function_size);
++	memcpy(buffer, (uchar *)doheap, function_size);
++	spi_check = (heapstatus_t)buffer;
++
++	/* Protect and unprotect CS1 (always check this first) */
++	cs1_status = spi_check(timer_fp, 1, should_lock);
++
++	/* Protect and detect the hardware protection for CS0 */
++	cs0_status = spi_check(timer_fp, 0, should_lock);
++
++	debug("cs0_status = %d, cs1_status = %d\n", cs0_status, cs1_status);
++	/* Return an ERROR indicating PROM status issues. */
++	ce0_ctrl = readl(ASPEED_FMC_BASE + AST_FMC_CE0_CONTROL);
++	ce1_ctrl = readl(ASPEED_FMC_BASE + AST_FMC_CE1_CONTROL);
++	debug("After: CE0_CTRL=0x%08X, CE1_CTRL=0x%08X\n", ce0_ctrl, ce1_ctrl);
++	return (cs1_status == AST_FMC_ERROR) ? AST_FMC_ERROR : cs0_status;
++}
+diff --git a/board/wb-obmc/ast/flash-spl.h b/board/wb-obmc/ast/flash-spl.h
+new file mode 100644
+index 00000000..ab2889b6
+--- /dev/null
++++ b/board/wb-obmc/ast/flash-spl.h
+@@ -0,0 +1,31 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++
++#define AST_FMC_WP_ON    0
++#define AST_FMC_WP_OFF   2
++#define AST_FMC_ERROR    1
++
++/**
++ * ast_fmc_spi_check() - Reset AST2500 FMC SPI chip select 1 status.
++ *
++ * For the SPL boot the second flash (SPI0.1) CS1 in the FMC "controller" must
++ * be reset. The FMC does not auto-detect and set the CS1 "status register"
++ * based on the mode of the part, like it does for SPI0.0.
++ *
++ * should_lock - If hardware enforcement is enabled this instructs
++ * the spi flashes to be locked.
++ *
++ * This will return 0 on success (CS1 was reset and CS0 is protected).
++ * This will return 1 if CS0 cannot set protections (critical error).
++ * This will return 2 if CS0 is not pulling WP# active low.
++ *
++ * Expect the following defines:
++ *   AST_FMC_CS1_BASE - the MMIO location of SPI0.1 (FMC CS1).
++ *   AST_FMC_BASE     - the MMIO base of the FMC register group.
++ *
++ */
++int ast_fmc_spi_check(bool should_lock);
+diff --git a/board/wb-obmc/ast/tpm-spl.c b/board/wb-obmc/ast/tpm-spl.c
+new file mode 100644
+index 00000000..96edddec
+--- /dev/null
++++ b/board/wb-obmc/ast/tpm-spl.c
+@@ -0,0 +1,409 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++#include <common.h>
++#include <dm.h>
++#include <tpm-v1.h>
++#include <asm/arch/vbs.h>
++
++#include "tpm-spl.h"
++
++static int get_tpm(struct udevice **devp)
++{
++	int rc;
++
++	rc = uclass_first_device_err(UCLASS_TPM, devp);
++	if (rc) {
++		printf("SPL Could not find TPM (ret=%d)\n", rc);
++		return CMD_RET_FAILURE;
++	}
++
++	return 0;
++}
++
++static inline void set_tpm_error(struct vbs *vbs, uint32_t r) {
++  vbs->error_tpm = (r > 0xFF) ? 0xFF : r;
++}
++
++int ast_tpm_provision(struct vbs *vbs) {
++  uint32_t result;
++  struct tpm_permanent_flags pflags;
++  struct tpm_volatile_flags vflags;
++  int err;
++  struct udevice *dev;
++
++  /* Get the TPM device handler */
++  err = get_tpm(&dev);
++  if (err) {
++	  debug("get tpm failed (%d)\n", err);
++	  return VBS_ERROR_TPM_NOT_ENABLED;
++  }
++
++  /* The Infineon TPM needs 35ms */
++  debug("start udelay 35ms\n");
++  udelay(35 * 1000);
++
++  /* The SPL should init (software-only setup), startup-clear, and test. */
++  result = tpm_init(dev);
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_NOT_ENABLED;
++  }
++
++  result = tpm_startup(dev, TPM_ST_CLEAR);
++  if (result) {
++    /* If this returns invalid postinit (38) then the TPM was not reset. */
++    debug("TPM startup failed (%d)\n", result);
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_SETUP;
++  }
++
++  tpm_self_test_full(dev);
++
++  /* Inspect the result of the TPM self-test. */
++  uint32_t retries;
++  for (retries = 0; retries < 10; retries++) {
++    result = tpm_continue_self_test(dev);
++    if (result == TPM_SUCCESS) {
++      break;
++    }
++    /* The TPM could have asked for a retry or is still self-testing. */
++    if (result < TPM_NON_FATAL) {
++      debug("TPM continue_self_test failed (%d)\n", result);
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_SETUP;
++    }
++  }
++
++  /* Inspect the permanent and volatile flags. */
++  result = tpm_get_permanent_flags(dev, &pflags);
++  result = result | tpm_get_volatile_flags(dev, &vflags);
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_FAILURE;
++  }
++
++  if (!pflags.physical_presence_cmd_enable &&
++      pflags.physical_presence_lifetime_lock) {
++    /* We cannot set physical presence so the board must be doing it. */
++    if (vflags.physical_presence != 0x0) {
++      /* We do not have physical presence, so cannot configure anything. */
++      return VBS_ERROR_TPM_NO_PP;
++    }
++  }
++
++  if (!pflags.physical_presence_lifetime_lock) {
++    /* We have not locked PP yet, configure for command only. */
++    result = tpm_tsc_physical_presence(dev,
++        TPM_PHYSICAL_PRESENCE_HW_DISABLE | TPM_PHYSICAL_PRESENCE_CMD_ENABLE);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_INVALID_PP;
++    }
++
++#ifdef CONFIG_ASPEED_TPM_LOCK
++    /* After configuring, lock the physical presence mode. */
++    result = tpm_tsc_physical_presence(dev,
++				       TPM_PHYSICAL_PRESENCE_LIFETIME_LOCK);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_NO_PPLL;
++    }
++#endif
++  }
++
++  /* Assert physical presence. */
++  if (!vflags.physical_presence) {
++    result = tpm_tsc_physical_presence(dev, TPM_PHYSICAL_PRESENCE_PRESENT);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_PP_FAILED;
++    }
++  }
++
++  /* Set the permanent enabled flag (need physical presence). */
++  if (pflags.disable) {
++    result = tpm_physical_enable(dev);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_NOT_ENABLED;
++    }
++  }
++
++  /* Set the persistent disabled flag to false. */
++  if (pflags.deactivated) {
++    result = tpm_physical_set_deactivated(dev, 0x0);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_ACTIVATE_FAILED;
++    }
++
++    /**
++     * If the TPM is persistent deactivated it must be enabled and reset.
++     * This provisioning has enabled the TPM, allow the caller to reset.
++     */
++    return VBS_ERROR_TPM_RESET_NEEDED;
++  }
++
++  return VBS_SUCCESS;
++}
++
++int ast_tpm_owner_provision(struct vbs *vbs) {
++  uint32_t result;
++  struct udevice *dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return err;
++  }
++
++  /* Allow the TPM to be owned. */
++  result = tpm_set_owner_install(dev);
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_FAILURE;
++  }
++
++  return VBS_SUCCESS;
++}
++
++static uint32_t ast_tpm_write(uint32_t index, const void *data, uint32_t length) {
++  uint32_t result;
++
++  struct udevice *dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return (uint32_t)err;
++  }
++
++  result = tpm_nv_write_value(dev, index, data, length);
++  if (result == TPM_MAXNVWRITES) {
++    tpm_force_clear(dev);
++    result = tpm_nv_write_value(dev, index, data, length);
++  }
++  return result;
++}
++
++int ast_tpm_nv_provision(struct vbs *vbs) {
++  uint32_t result;
++  struct tpm_permanent_flags pflags;
++  struct tpm_volatile_flags vflags;
++  struct udevice *dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return err;
++  }
++
++  result = tpm_get_permanent_flags(dev, &pflags);
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_FAILURE;
++  }
++
++#ifdef CONFIG_ASPEED_TPM_LOCK
++  /* Lock the NV storage, request that ACLs are applied. */
++  if (!pflags.nv_locked) {
++    result = tpm_nv_define_space(dev, TPM_NV_INDEX_LOCK, 0, 0);
++    if (result) {
++      set_tpm_error(vbs, result);
++      return VBS_ERROR_TPM_NV_LOCK_FAILED;
++    }
++  }
++#endif
++
++  /* Request the flag values again. */
++  result = tpm_get_permanent_flags(dev, &pflags);
++  result = result | tpm_get_volatile_flags(dev, &vflags);
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_FAILURE;
++  }
++
++#ifdef CONFIG_ASPEED_TPM_LOCK
++  if (!pflags.nv_locked) {
++    return VBS_ERROR_TPM_NV_NOT_LOCKED;
++  }
++#endif
++
++  if (vflags.deactivated) {
++    return VBS_ERROR_TPM_NOT_ACTIVATED;
++  }
++
++  /* ACLs will be applied to our probe index and fallback index. */
++  u32 acls = TPM_NV_PER_GLOBALLOCK | TPM_NV_PER_PPWRITE;
++
++  char blank[VBS_TPM_ROLLBACK_SIZE];
++  result = tpm_nv_read_value(dev, VBS_TPM_ROLLBACK_INDEX, &blank, sizeof(blank));
++  if (result != TPM_BADINDEX && result != TPM_NOSPACE) {
++    /* The index already exists. */
++    return VBS_SUCCESS;
++  }
++
++  /**
++   * Define area for U-Boot version and Kernel version.
++   * Set that area's ACLs to TPM_NV_PER_GLOBALLOCK | TPM_NV_PER_PPWRITE.
++   * Set that area's size to 32 * 4.
++   */
++  result = tpm_nv_define_space(dev, VBS_TPM_ROLLBACK_INDEX, acls,
++      VBS_TPM_ROLLBACK_SIZE);
++  if (result == TPM_MAXNVWRITES) {
++    tpm_force_clear(dev);
++    result = tpm_nv_define_space(dev, VBS_TPM_ROLLBACK_INDEX, acls,
++        VBS_TPM_ROLLBACK_SIZE);
++  }
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_NV_SPACE;
++  }
++
++  memset(blank, 0x0, VBS_TPM_ROLLBACK_SIZE);
++  result = ast_tpm_write(VBS_TPM_ROLLBACK_INDEX, blank, sizeof(blank));
++
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_NV_BLANK;
++  }
++
++  return VBS_SUCCESS;
++}
++
++int ast_tpm_extend(uint32_t index, unsigned char* data, uint32_t data_len) {
++  unsigned char value[20];
++  struct udevice* dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return err;
++  }
++  sha1_csum_wd(data, data_len, value, CHUNKSZ_SHA1);
++  return tpm_extend(dev, index, value, value);
++}
++
++static void ast_tpm_update_vbs_times(struct tpm_rollback_t *rb,
++    struct vbs *vbs) {
++  /* This copies the TPM NV data into the verified-boot status structure. */
++  vbs->subordinate_last = rb->fallback_subordinate;
++  vbs->subordinate_current = rb->subordinate;
++  vbs->uboot_last = rb->fallback_uboot;
++  vbs->uboot_current = rb->uboot;
++  vbs->kernel_last = rb->fallback_kernel;
++  vbs->kernel_current = rb->kernel;
++}
++
++int ast_tpm_try_version(struct vbs *vbs, uint8_t image, uint32_t version,
++    bool no_fallback) {
++  uint32_t result;
++  uint32_t *rb_target;
++  uint32_t *rb_fallback_target;
++  struct tpm_rollback_t rb;
++  struct udevice *dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return err;
++  }
++
++  /* Need to load the last-executed version of U-Boot. */
++  rb.subordinate = -1;
++  rb.uboot = -1;
++  rb.kernel = -1;
++  rb.fallback_subordinate = -1;
++  rb.fallback_uboot = -1;
++  rb.fallback_kernel = -1;
++  if (image == AST_TPM_ROLLBACK_UBOOT) {
++    rb_target = &rb.uboot;
++    rb_fallback_target = &rb.fallback_uboot;
++  } else if (image == AST_TPM_ROLLBACK_SUBORDINATE) {
++    rb_target = &rb.subordinate;
++    rb_fallback_target = &rb.fallback_subordinate;
++  } else {
++    rb_target = &rb.kernel;
++    rb_fallback_target = &rb.fallback_kernel;
++  }
++
++  result = tpm_nv_read_value(dev, VBS_TPM_ROLLBACK_INDEX, &rb, sizeof(rb));
++  if (result) {
++    set_tpm_error(vbs, result);
++    return VBS_ERROR_TPM_NV_READ_FAILED;
++  }
++
++  ast_tpm_update_vbs_times(&rb, vbs);
++  if (*rb_target == -1) {
++    /**
++     * Content is still -1.
++     * Alternatively someone had booted a payload signed at time UINT_MAX.
++     * This is huge issue and will brick the system from future updates.
++     * To save the system and put security/safety pressure on the signer, this
++     * causes an intentional wrap-around.
++     */
++    *rb_target = 0x0;
++  }
++
++  if (*rb_target > version) {
++    /* This seems to be attempting a rollback. */
++    if (no_fallback || *rb_fallback_target != version) {
++      return VBS_ERROR_ROLLBACK_FAILED;
++    }
++  }
++
++  if (*rb_target != 0 &&
++      version > *rb_target + (86400 * 365 * AST_TPM_MAX_YEARS)) {
++    /* Do not allow fast-forwarding beyond 5 years. */
++    return VBS_ERROR_ROLLBACK_HUGE;
++  }
++
++  if (version != *rb_target) {
++    /* Only update the NV space if this is a new version or fallback 'promo'. */
++    if (no_fallback) {
++      /* Fallback is disabled, the fallback is always the current. */
++      *rb_fallback_target = version;
++    } else if (version != *rb_fallback_target) {
++      /* This is not fallback 'promotion', previous version is now fallback. */
++      *rb_fallback_target = *rb_target;
++    }
++
++    /* Current is now the promoted fallback or a later version. */
++    *rb_target = version;
++    if (vbs->error_code == VBS_SUCCESS) {
++      /* Only update times if verification has not yet failed. */
++      result = ast_tpm_write(VBS_TPM_ROLLBACK_INDEX, &rb, sizeof(rb));
++      if (result) {
++        set_tpm_error(vbs, result);
++        return VBS_ERROR_TPM_NV_WRITE_FAILED;
++      }
++    }
++
++    /* The times have changed. */
++    ast_tpm_update_vbs_times(&rb, vbs);
++  }
++
++  return VBS_SUCCESS;
++}
++
++int ast_tpm_finish(void) {
++  uint32_t result;
++  struct udevice *dev;
++  int err;
++
++  err = get_tpm(&dev);
++  if (err) {
++	  return err;
++  }
++
++  result = tpm_tsc_physical_presence(dev,
++      TPM_PHYSICAL_PRESENCE_NOTPRESENT | TPM_PHYSICAL_PRESENCE_LOCK);
++  if (result) {
++    return VBS_ERROR_ROLLBACK_FINISH;
++  }
++
++  return VBS_SUCCESS;
++}
+diff --git a/board/wb-obmc/ast/tpm-spl.h b/board/wb-obmc/ast/tpm-spl.h
+new file mode 100644
+index 00000000..2c10448d
+--- /dev/null
++++ b/board/wb-obmc/ast/tpm-spl.h
+@@ -0,0 +1,104 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++#include <common.h>
++
++#include <asm/arch/vbs.h>
++
++/* Years the next upgrade must occur, protect against timestamp DoS */
++#define AST_TPM_MAX_YEARS 5
++
++enum ast_tpm_rollback_type {
++  AST_TPM_ROLLBACK_SUBORDINATE = 0,
++  AST_TPM_ROLLBACK_UBOOT = 1,
++  AST_TPM_ROLLBACK_KERNEL = 2,
++};
++
++struct tpm_rollback_t {
++  uint32_t subordinate;
++  uint32_t uboot;
++  uint32_t kernel;
++  uint32_t fallback_subordinate;
++  uint32_t fallback_uboot;
++  uint32_t fallback_kernel;
++};
++
++enum ast_tpm_pcrs {
++  AST_TPM_PCR_SPL = 0,
++  AST_TPM_PCR_FIT = 1,
++  AST_TPM_PCR_UBOOT = 2,
++  AST_TPM_PCR_ENV = 3,
++  AST_TPM_PCR_VBS = 5,
++  AST_TPM_PCR_OS = 9,
++};
++
++enum ast_tpm_state {
++  AST_TPM_STATE_GOOD = 0,
++  AST_TPM_STATE_FAIL = 1,
++  AST_TPM_STATE_INIT = 2, /* not startup and selftest yet */
++};
++/**
++ * int ast_tpm_provision() - Perform a 1-time provision of the TPM.
++ *
++ * @return a status for vboot_status
++ */
++int ast_tpm_provision(struct vbs *vbs);
++
++/**
++ * int ast_tpm_nv_provision() - Preform a 1-time NV provision.
++ *
++ * @return a status for vboot_status
++ */
++int ast_tpm_nv_provision(struct vbs *vbs);
++
++/**
++ * int ast_tpm_owner_provision() - Preform a 1-time owner provision.
++ *
++ * @return a status for vboot_status
++ */
++int ast_tpm_owner_provision(struct vbs *vbs);
++
++/**
++ * int ast_tpm_extend() - Hash and extend into a PCR
++ *
++ * @return a status for tpm_status
++ */
++int ast_tpm_extend(uint32_t index, unsigned char* data, uint32_t data_len);
++
++/**
++ * int ast_tpm_try_version() - Try to verify a version is not rolling back.
++ *
++ * @param vbs the vboot structure.
++ * @param image set this to either ROLLBACK_UBOOT or ROLLBACK_KERNEL (see above)
++ * @param version this is the version you are attempting to boot.
++ * @param no_fallback set to any value greater than 0 will not allow a fallback.
++ * @return a status for vboot_status
++ */
++int ast_tpm_try_version(struct vbs *vbs, uint8_t image, uint32_t version,
++                        bool no_fallback);
++
++/**
++ * int ast_tpm_finish() - Lock the physical presence.
++ *
++ * @return a status for vboot_status
++ */
++int ast_tpm_finish(void);
++
++/**
++ * ast_tpm_get_state() - Get the current TPM
++ *
++ * @return ast_tpm_state
++ */
++int ast_tpm_get_state(void);
++
++/**
++ * bool ast_tpm_pcr_is_open() - check whether the PCR is just reset
++ *
++ * @param vbs the vboot structure.
++ * @param pcrid the PCR index
++ * @return true if the pcr all bits are 0 or 1, otherwise false.
++ */
++bool ast_tpm_pcr_is_open(struct vbs *vbs, uint32_t pcrid);
+diff --git a/board/wb-obmc/ast/tpm2-spl.c b/board/wb-obmc/ast/tpm2-spl.c
+new file mode 100644
+index 00000000..c615de5f
+--- /dev/null
++++ b/board/wb-obmc/ast/tpm2-spl.c
+@@ -0,0 +1,446 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++#include <common.h>
++#include <dm.h>
++#include <tpm-v2.h>
++#include <asm/arch/vbs.h>
++#include "tpm-spl.h"
++
++#define RB_NV_PROPERTY_CREATE \
++	(TPMA_NV_PPREAD | TPMA_NV_PPWRITE | TPMA_NV_PLATFORMCREATE)
++#define RB_NV_PROPERTY_PROVISIONED \
++	(RB_NV_PROPERTY_CREATE | TPMA_NV_WRITTEN)
++#define RB_NV_INDEX_HANDLE                                                     \
++	((TPM_HT_NV_INDEX << 24) | (VBS_TPM_ROLLBACK_INDEX & 0xFFFFF))
++
++static int get_tpm(struct udevice **devp)
++{
++	int rc;
++
++	rc = uclass_first_device_err(UCLASS_TPM, devp);
++	if (rc) {
++		printf("SPL Could not find TPM (ret=%d)\n", rc);
++		return CMD_RET_FAILURE;
++	}
++
++	return 0;
++}
++
++static inline void set_tpm_error(struct vbs *vbs, uint32_t r)
++{
++	vbs->error_tpm2 = r & 0xFFFF;
++}
++
++static int check_pcr_is_reset(struct udevice* dev, struct vbs *vbs, int pcrid)
++{
++	uint32_t result, updates, i ;
++	struct tpm_chip_priv *priv;
++	uint8_t pcrval[TPM2_DIGEST_LEN], byte0;
++
++	/* inital vaule of PCR shall be all bits are 0 or 1.
++	 * even PCR[0] could be locality as we will only use locality 0
++	 * so we can just check all bits are 0 or 1
++	 */
++	priv = dev_get_uclass_priv(dev);
++	if (!priv) {
++		log_err("Cannot get tpm priv\n");
++		return VBS_ERROR_TPM_NOT_ENABLED ;
++	}
++
++	result = tpm2_pcr_read(dev, pcrid, priv->pcr_select_min, pcrval, &updates);
++	if (result) {
++		log_err("Read %d failed (0x%08X)\n", pcrid, result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_FAILURE;
++	}
++
++	log_debug_buffer(pcrval, sizeof(pcrval));
++	byte0 = pcrval[0];
++	if ( (byte0 != 0) && (byte0 != 0xFF)) {
++		log_warning("PCR is not cleared\n");
++		return VBS_ERROR_TPM_RESET_NEEDED;
++	}
++
++	for (i = 1 ; i < sizeof(pcrval); ++i) {
++		if (pcrval[i] != byte0) {
++			log_warning("PCR is not cleared\n");
++			return VBS_ERROR_TPM_RESET_NEEDED;
++		}
++	}
++
++	return VBS_SUCCESS;
++}
++
++bool ast_tpm_pcr_is_open(struct vbs *vbs, uint32_t pcrid)
++{
++	int result;
++	struct udevice *dev;
++
++	result = get_tpm(&dev);
++	if (result) return false;
++	result = check_pcr_is_reset(dev, vbs, pcrid);
++	return (VBS_SUCCESS == result);
++}
++
++int ast_tpm_provision(struct vbs *vbs)
++{
++	uint32_t result;
++	int err;
++	uint32_t retries;
++	struct udevice *dev;
++
++	/* Get the TPM device handler */
++	err = get_tpm(&dev);
++	if (err) {
++		debug("get tpm failed (%d)\n", err);
++		return VBS_ERROR_TPM_NOT_ENABLED;
++	}
++
++	/* The Infineon TPM needs 35ms */
++	debug("start udelay 35ms\n");
++	udelay(35 * 1000);
++
++	/* The SPL should init (software-only setup), startup-clear, and test. */
++	result = tpm_init(dev);
++	if (result) {
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_NOT_ENABLED;
++	}
++
++	result = tpm2_startup(dev, TPM2_SU_CLEAR);
++	if (result) {
++		/* If this returns invalid postinit (38) then the TPM was not reset. */
++		log_err("TPM2 startup failed (0x%08x)\n", result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_SETUP;
++	}
++
++	/* run full selftest */
++	result = tpm2_self_test(dev, TPMI_YES);
++
++	/* TPM implementation can either use
++	 * synchronize self-test: response SelfTest command until test is done;
++	 * or a-synchronized SelfTest: start the test in background and
++	 * return TPM_RC_TESTING.
++	 * For a-synchronized selftest, system can via issue SelfTest() again
++	 * to polling self-test is success (RC_SUCCESS), fail (RC_FAIL)
++	 * or still going on (RC_TESTING)
++	 *
++	 * There is a known issue in Infineon TPM with FW early than 7.85:
++	 * If the TPM perform selftest in the background subsequently other
++	 * commands may interrupts the running selftest and results in
++	 * a security reset of the TPM.
++	 * To workaround of this issue, system shall make sure wait at least
++	 * 50ms to issue another command after TPM2_SelfTest(fullTest=No) is
++	 * request.
++	*/
++	for (retries = 0; (TPM2_RC_TESTING == result) && (retries < 3);
++	     retries++) {
++		log_warning("delay 50ms wait selftest done.\n");
++		udelay(50 * 1000);
++		result = tpm2_self_test(dev, TPMI_NO);
++	}
++
++	if (TPM2_RC_SUCCESS != result) {
++		log_err("TPM2 self_test failed (0x%08x)\n", result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_SETUP;
++	}
++
++	/* check pcr0 be reset to see whether tpm need be reset */
++	return check_pcr_is_reset(dev, vbs, 0);
++}
++
++int ast_tpm_owner_provision(struct vbs *vbs)
++{
++	/* nothing need for TPM2 as we use platform hierarchy */
++	return VBS_SUCCESS;
++}
++
++u32 tpm2_check_rollback_nv(struct udevice *dev)
++{
++	u32 result;
++	u32 attributes;
++	u16 hash_alg, policy_sz, data_sz, nv_name_sz;
++	u8 policy[TPM2_DIGEST_LEN] = { 0 };
++	u8 nv_name[TPM2_DIGEST_LEN] = { 0 };
++
++	result = tpm2_nv_readpublic(dev, RB_NV_INDEX_HANDLE, &hash_alg,
++				    &attributes, &policy_sz, policy, &data_sz,
++				    &nv_name_sz, nv_name);
++
++	if (TPM2_RC_SUCCESS != result) {
++		log_warning("Read NV-index public fail (0x%x)\n", result);
++		return result;
++	}
++	/* check the size */
++	if (data_sz != VBS_TPM_ROLLBACK_SIZE) {
++		log_warning("NV defined in wrong size (%d)\n", data_sz);
++		log_warning("undefine it\n");
++		result = tpm2_nv_undefinespace(dev, NULL, 0, TPM2_RH_PLATFORM,
++					       RB_NV_INDEX_HANDLE);
++		if (TPM2_RC_SUCCESS != result) {
++			return result;
++		}
++		return TPM2_RC_HANDLE1;
++	}
++	/* check the property PPREAD|PPWRITE|PLATFORMCREATE|WRITTEN */
++	if (RB_NV_PROPERTY_PROVISIONED != attributes) {
++		log_warning("NV defined in wrong attributes(0x%08x)\n",
++			    attributes);
++		log_warning("undefine it\n");
++		result = tpm2_nv_undefinespace(dev, NULL, 0, TPM2_RH_PLATFORM,
++					       RB_NV_INDEX_HANDLE);
++		if (TPM2_RC_SUCCESS != result) {
++			return result;
++		}
++		return TPM2_RC_HANDLE1;
++	}
++
++	return TPM2_RC_SUCCESS;
++}
++
++static u32 ast_tpm_write(struct udevice *dev, const void *data, size_t length)
++{
++	u32 result = VBS_SUCCESS;
++
++	result = tpm2_nv_write(dev, NULL, 0, TPM2_RH_PLATFORM,
++			       RB_NV_INDEX_HANDLE, (u8 *)data, length, 0);
++
++	return result;
++}
++
++#pragma GCC push_options
++#pragma GCC optimize ("O0")
++int ast_tpm_nv_provision(struct vbs *vbs)
++{
++	struct udevice *dev;
++	int err;
++	u32 result;
++	char blank[VBS_TPM_ROLLBACK_SIZE];
++
++	err = get_tpm(&dev);
++	if (err) {
++		return err;
++	}
++
++	result = tpm2_check_rollback_nv(dev);
++	if (TPM2_RC_SUCCESS == result) {
++		log_info("NV already provisioned\n");
++		return VBS_SUCCESS;
++	}
++
++	if (TPM2_RC_HANDLE1 == result) {
++		log_info("Define rollback NV-index 0x%08x\n",
++			 RB_NV_INDEX_HANDLE);
++		result =
++			tpm2_nv_definespace(dev, NULL, 0, TPM2_RH_PLATFORM,
++					    RB_NV_INDEX_HANDLE, TPM2_ALG_SHA256,
++					    RB_NV_PROPERTY_CREATE,
++					    VBS_TPM_ROLLBACK_SIZE);
++	}
++
++	if (TPM2_RC_SUCCESS != result) {
++		log_err("define rollback nv failed (0x%08x)\n", result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_NV_SPACE;
++	}
++
++	memset(blank, 0x0, sizeof(blank));
++	result = ast_tpm_write(dev, blank, sizeof(blank));
++	if (result) {
++		log_err("blank rollback nv failed (0x%08x)\n", result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_NV_BLANK;
++	}
++
++	return VBS_SUCCESS;
++}
++#pragma GCC pop_options
++
++int ast_tpm_extend(uint32_t index, unsigned char *data, uint32_t data_len)
++{
++	unsigned char value[TPM2_DIGEST_LEN] = {
++		0,
++	};
++	struct udevice *dev;
++	u32 result;
++	int err;
++
++	err = get_tpm(&dev);
++	if (err) {
++		return err;
++	}
++
++	log_debug("sha256(%d) start\n", data_len);
++	sha256_csum_wd(data, data_len, value, CHUNKSZ_SHA256);
++	log_debug("sha256(%d) done\n", data_len);
++
++	result = tpm2_pcr_extend(dev, index, value);
++	if (TPM2_RC_SUCCESS != result) {
++		log_err("Extend PCR(%d) failed (0x%08x)\n", index, result);
++		return -1;
++	}
++
++	return 0;
++}
++
++static void ast_tpm_update_vbs_times(struct tpm_rollback_t *rb, struct vbs *vbs)
++{
++	/* This copies the TPM NV data into the verified-boot status structure. */
++	vbs->subordinate_last = rb->fallback_subordinate;
++	vbs->subordinate_current = rb->subordinate;
++	vbs->uboot_last = rb->fallback_uboot;
++	vbs->uboot_current = rb->uboot;
++	vbs->kernel_last = rb->fallback_kernel;
++	vbs->kernel_current = rb->kernel;
++}
++
++int ast_tpm_try_version(struct vbs *vbs, uint8_t image, uint32_t version,
++			bool no_fallback)
++{
++	uint32_t result;
++	uint32_t *rb_target;
++	uint32_t *rb_fallback_target;
++	struct tpm_rollback_t rb;
++	struct udevice *dev;
++	int err;
++
++	err = get_tpm(&dev);
++	if (err) {
++		return err;
++	}
++
++	/* Need to load the last-executed version of U-Boot. */
++	rb.subordinate = -1;
++	rb.uboot = -1;
++	rb.kernel = -1;
++	rb.fallback_subordinate = -1;
++	rb.fallback_uboot = -1;
++	rb.fallback_kernel = -1;
++	if (image == AST_TPM_ROLLBACK_UBOOT) {
++		rb_target = &rb.uboot;
++		rb_fallback_target = &rb.fallback_uboot;
++	} else if (image == AST_TPM_ROLLBACK_SUBORDINATE) {
++		rb_target = &rb.subordinate;
++		rb_fallback_target = &rb.fallback_subordinate;
++	} else {
++		rb_target = &rb.kernel;
++		rb_fallback_target = &rb.fallback_kernel;
++	}
++
++	result = tpm2_nv_read(dev, NULL, 0, TPM2_RH_PLATFORM,
++			      RB_NV_INDEX_HANDLE, sizeof(rb), 0, (u8 *)&rb);
++	if (result) {
++		log_err("Read rollback nv failed (0x%08x)\n", result);
++		set_tpm_error(vbs, result);
++		return VBS_ERROR_TPM_NV_READ_FAILED;
++	}
++
++	ast_tpm_update_vbs_times(&rb, vbs);
++	if (*rb_target == -1) {
++	/**
++	* Content is still -1.
++	* Alternatively someone had booted a payload signed at time UINT_MAX.
++	* This is huge issue and will brick the system from future updates.
++	* To save the system and put security/safety pressure on the signer, this
++	* causes an intentional wrap-around.
++	*/
++		*rb_target = 0x0;
++	}
++
++	if (*rb_target > version) {
++		/* This seems to be attempting a rollback. */
++		if (no_fallback || *rb_fallback_target != version) {
++			return VBS_ERROR_ROLLBACK_FAILED;
++		}
++	}
++
++	if (*rb_target != 0 &&
++	    version > *rb_target + (86400 * 365 * AST_TPM_MAX_YEARS)) {
++		/* Do not allow fast-forwarding beyond 5 years. */
++		return VBS_ERROR_ROLLBACK_HUGE;
++	}
++
++	if (version != *rb_target) {
++		/* Only update the NV space if this is a new version or fallback 'promo'. */
++		if (no_fallback) {
++			/* Fallback is disabled, the fallback is always the current. */
++			*rb_fallback_target = version;
++		} else if (version != *rb_fallback_target) {
++			/* This is not fallback 'promotion', previous version is now fallback. */
++			*rb_fallback_target = *rb_target;
++		}
++
++		/* Current is now the promoted fallback or a later version. */
++		*rb_target = version;
++		if (vbs->error_code == VBS_SUCCESS) {
++			/* Only update times if verification has not yet failed. */
++			result = ast_tpm_write(dev, &rb, sizeof(rb));
++			if (result) {
++				set_tpm_error(vbs, result);
++				return VBS_ERROR_TPM_NV_WRITE_FAILED;
++			}
++		}
++
++		/* The times have changed. */
++		ast_tpm_update_vbs_times(&rb, vbs);
++	}
++
++	return VBS_SUCCESS;
++}
++
++int ast_tpm_finish(void)
++{
++#ifdef CONFIG_ASPEED_TPM_LOCK
++	uint32_t result;
++	struct udevice *dev;
++	int err;
++	volatile struct vbs *vbs = (volatile struct vbs*)AST_SRAM_VBS_BASE;
++
++	err = get_tpm(&dev);
++	if (err) {
++		return err;
++	}
++
++	if (vbs->hardware_enforce) {
++		printf("disabling platform hierarchy\n");
++		result = tpm2_hierarchy_control(dev, NULL, 0, TPM2_RH_PLATFORM,
++						TPM2_RH_PLATFORM, false);
++	} else {
++		printf("Keep platform hierarchy enabled when no h/w enforce\n");
++		result = TPM2_RC_SUCCESS;
++	}
++	if (TPM2_RC_SUCCESS != result) {
++		log_err("disable platform hierarchy failed(0x%08x)\n", result);
++		return VBS_ERROR_ROLLBACK_FINISH;
++	}
++#endif
++	return VBS_SUCCESS;
++}
++
++int ast_tpm_get_state(void)
++{
++	uint32_t result, updates;
++	struct tpm_chip_priv *priv;
++	struct udevice *dev;
++	uint8_t pcrval[TPM2_DIGEST_LEN];
++
++	/* try to read PCR0 to detect TPM state */
++	if (get_tpm(&dev))
++		return AST_TPM_STATE_FAIL;
++	priv = dev_get_uclass_priv(dev);
++	if (!priv) {
++		return AST_TPM_STATE_FAIL ;
++	}
++
++	result = tpm2_pcr_read(dev, 0, priv->pcr_select_min, pcrval, &updates);
++	switch (result) {
++		case TPM2_RC_SUCCESS: return AST_TPM_STATE_GOOD;
++		case TPM2_RC_INITIALIZE: return AST_TPM_STATE_INIT;
++		default: return AST_TPM_STATE_FAIL;
++	}
++}
+diff --git a/board/wb-obmc/ast/util.c b/board/wb-obmc/ast/util.c
+new file mode 100644
+index 00000000..3f5e83ba
+--- /dev/null
++++ b/board/wb-obmc/ast/util.c
+@@ -0,0 +1,171 @@
++/*
++ * (C) Copyright 2019-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++#include <common.h>
++#include <dm.h>
++#include <i2c.h>
++#include <wdt.h>
++#include <asm/arch/wdt.h>
++#include <asm/io.h>
++
++#define PFR_PROV_STS  0x0A
++#define PFR_BMC_CHKPT 0x0F
++
++int watchdog_init(u32 timeout_sec)
++{
++#ifdef CONFIG_ASPEED_ENABLE_WATCHDOG
++	struct udevice *wdt;
++	int ret;
++	u32 timeout_ms = timeout_sec * 1000;
++
++	ret = uclass_first_device_err(UCLASS_WDT, &wdt);
++	if (ret) {
++		printf("No WDT device: %d\n", ret);
++		return ret;
++	}
++#ifdef AST_SYSRESET_WITH_SOC
++	ret = wdt_start(wdt, timeout_ms, WDT_CTRL_RESET_SOC);
++#else
++	ret = wdt_start(wdt, timeout_ms, WDT_CTRL_RESET_CHIP);
++#endif
++	if (ret) {
++		printf("Start WDT%u %us failed: %d\n",
++		       wdt->seq, timeout_sec, ret);
++		return ret;
++	}
++
++	printf("Watchdog: %us\n", timeout_sec);
++#endif
++	return 0;
++}
++
++int pfr_checkpoint(uint cmd) {
++  int ret = -1;
++#ifdef CONFIG_PFR_BUS
++  int retry = 2;
++  struct udevice *bus, *dev;
++
++  do {
++    ret = uclass_get_device_by_name(UCLASS_I2C, CONFIG_PFR_BUS, &bus);
++    if (ret)
++      break;
++
++    ret = i2c_get_chip(bus, CONFIG_PFR_ADDR, 1, &dev);
++    if (ret)
++      break;
++
++    do {
++      ret = dm_i2c_reg_read(dev, PFR_PROV_STS);
++      if ((ret < 0) && retry)
++        udelay(10000);
++    } while ((ret < 0) && (retry-- > 0));
++
++    if ((ret <= 0) || !(ret & 0x20)) {
++      ret = -1;
++      break;
++    }
++
++    retry = 2;
++    do {
++      ret = dm_i2c_reg_write(dev, PFR_BMC_CHKPT, cmd);
++      if (ret && retry)
++        udelay(10000);
++    } while (ret && (retry-- > 0));
++  } while (0);
++#endif
++  if (ret)
++    return ret;
++
++  debug("pfr_checkpoint: 0x%02x\n", cmd);
++  return ret;
++}
++
++/*======================= Dual Boot Watchdog setup ===========================*/
++#if defined(CONFIG_ASPEED_AST2500) || defined(CONFIG_ASPEED_AST2400)
++int dual_boot_watchdog_init(uint32_t timeout_sec)
++{
++	struct udevice *wdt;
++	int ret;
++	u32 timeout_ms = timeout_sec * 1000;
++
++	ret = uclass_get_device_by_name(UCLASS_WDT, "watchdog@1e785020", &wdt);
++	if (ret) {
++		printf("cannot find watchdog@1e785020(wdt2): %d\n", ret);
++		return ret;
++	}
++#ifdef AST_SYSRESET_WITH_SOC
++	ret = wdt_start(wdt, timeout_ms, WDT_CTRL_RESET_SOC);
++#else
++	ret = wdt_start(wdt, timeout_ms, WDT_CTRL_RESET_CHIP);
++#endif
++	if (ret) {
++		printf("Start WDT%u %us failed: %d\n",
++		       wdt->seq, timeout_sec, ret);
++		return ret;
++	}
++
++	printf("Watchdog: %us\n", timeout_sec);
++	return 0;
++}
++#endif /* CONFIG_ASPEED_AST2500 or CONFIG_ASPEED_AST2400 */
++
++
++#if defined(CONFIG_ASPEED_AST2600)
++#define SCU_HW_STRAPPING_REG (ASPEED_SCU_BASE + 0x510)
++#define SCU_HW_CLEAR_STRAPPING_REG (ASPEED_SCU_BASE + 0x514)
++
++#define AUTO_SOFT_RESET_CONTROL (ASPEED_FMC_BASE + 0x50)
++#define WDT_CONTROL_STATUS_REG (ASPEED_FMC_BASE + 0x64)
++#define WDT_TIMER_RELOAD_REG (ASPEED_FMC_BASE + 0x68)
++#define WDT_CNT_RESTART_REG (ASPEED_FMC_BASE + 0x6C)
++
++/* FMC[64] */
++#define WDT_DISABLE 0x00 /* Disable WDT2 */
++#define WDT_ENABLE 0x01 /* Enable WDT2 */
++#define WDT_CLEAR_EVNET_COUNTER 0xEA000000 /* Clear WDT2 event counter */
++#define WDT_RESTART_MAGIC 0x4755 /* Restart WDT2 timer register */
++#define WDT_TIMEOUT_MAX_SECOND (0x333) /* (2^13 - 1) / 10 */
++
++/* SCU[510] */
++#define SCU_ENABLE_ABR (1 << 11) /* Enable ABR boot */
++#define SCU_3B_4B_AUTO_DETECTION                                               \
++	(1 << 10) /* Boot 3B/4B address mode auto detection */
++#define SCU_3B_MODE_CLEAR (1 << 9) /* Boot 3B address mode auto clear */
++
++/* FMC[50] */
++#define WAIT_SPI_WIP_IDLE (1 << 1) /* Enable wait SPI WIP idel */
++#define GENERATE_SOFT_RESET_COMMAND                                            \
++	(1 << 0) /* Enable generate soft-reset command */
++
++
++int dual_boot_watchdog_init(uint32_t timeout_sec)
++{
++	uint32_t reload = (timeout_sec < WDT_TIMEOUT_MAX_SECOND) ?
++		(timeout_sec * 10) : (WDT_TIMEOUT_MAX_SECOND * 10) ;
++	/* Enable boot SPI or eMMC ABR, and enable boot SPI 3B address mode auto-clear */
++	setbits_le32(SCU_HW_STRAPPING_REG, SCU_ENABLE_ABR);
++	setbits_le32(SCU_HW_CLEAR_STRAPPING_REG,
++		     SCU_3B_MODE_CLEAR | SCU_3B_4B_AUTO_DETECTION);
++
++	/* Enable Auto Soft-Reset Command Control*/
++	setbits_le32(AUTO_SOFT_RESET_CONTROL, WAIT_SPI_WIP_IDLE);
++	clrbits_le32(AUTO_SOFT_RESET_CONTROL, GENERATE_SOFT_RESET_COMMAND);
++
++	/* Disable WDT */
++	writel(WDT_DISABLE, WDT_CONTROL_STATUS_REG);
++
++	/* Set the Timeout value */
++	writel(reload, WDT_TIMER_RELOAD_REG);
++
++	/* Restart watchdog timer register */
++	writel(WDT_RESTART_MAGIC, WDT_CNT_RESTART_REG);
++
++	/* Enable WDT */
++	writel(WDT_ENABLE, WDT_CONTROL_STATUS_REG);
++
++	return 0;
++}
++
++#endif /* CONFIG_ASPEED_AST2600 */
+diff --git a/board/wb-obmc/ast/util.h b/board/wb-obmc/ast/util.h
+new file mode 100644
+index 00000000..f8e0d2e0
+--- /dev/null
++++ b/board/wb-obmc/ast/util.h
+@@ -0,0 +1,18 @@
++/*
++ * (C) Copyright 2019-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++#ifndef _BOARD_ASPEED_AST_UTIL_H
++#define _BOARD_ASPEED_AST_UTIL_H
++
++int watchdog_init(u32 timeout_sec);
++int pfr_checkpoint(uint cmd);
++
++#if defined(CONFIG_ASPEED_AST2600)
++void vboot_check_enforce(void);
++#endif
++
++int dual_boot_watchdog_init(uint32_t timeout_sec);
++
++#endif/*_BOARD_ASPEED_AST_UTIL_H*/
+diff --git a/board/wb-obmc/ast/vboot-abb.S b/board/wb-obmc/ast/vboot-abb.S
+new file mode 100644
+index 00000000..250a00a8
+--- /dev/null
++++ b/board/wb-obmc/ast/vboot-abb.S
+@@ -0,0 +1,64 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Verified boot alter boot blocker.
++ *
++ * Copyright (c) 2021 Facebook, Inc
++ */
++
++#include <config.h>
++#include <linux/linkage.h>
++#include <asm/arch/platform.h>
++
++#if defined(CONFIG_ASPEED_AST2600)
++
++/* refer to vbs.h for vbs structure and location */
++.macro save_start_addr_to_vbs
++	ldr	r1, =_start
++	ldr	r0, =CONFIG_SYS_INIT_SP_ADDR @;vbs.uboot_exec_address
++	str	r1, [r0]
++.endm
++
++/* verified boot altert boot blocker */
++.macro alter_boot_blocker
++	/* check the FMCWDT2 boot source */
++	ldr	r0, =ASPEED_FMC_WDT2
++	ldr	r1, [r0] @; FMCWDT2 bit4
++	tst	r1, #0x10
++	beq	abb_out
++
++abb_clear:
++	/* schedule WDT1 reset in 100 ms */
++	ldr	r0, =ASPEED_WDT_BASE
++	ldr	r1, =0
++	str	r1, [r0, #0x0C]   @; stop WDT1
++	ldr	r1, =100000
++	str	r1, [r0, #0x04]   @; stage 100ms counter
++	ldr	r1, =0x4755
++	str	r1, [r0, #0x08]   @; load counter
++	ldr	r1, =0x13
++	str	r1, [r0, #0x0C]   @; start WDT1
++	/* clear boot from alter source */
++	ldr	r0, =ASPEED_FMC_WDT2
++	ldr	r1, =0x00EA0000
++	str	r1, [r0] @; clear FMCWDT2 bit4
++	/* here SPI mapping switched immediately
++	 * NOTICE: if flash0 and flash1 code is different
++	 * system will run in unexpected state for <100 ms and reset
++	 */
++wait_abb_clear_reset:
++	b	wait_abb_clear_reset
++
++abb_out:
++	/* boot from primary soruce */
++.endm
++
++.section .text.vboot_abb
++ENTRY(save_boot_params)
++#if defined(CONFIG_SPL_BUILD) && !defined(CONFIG_QEMU_BUILD)
++	alter_boot_blocker
++#endif
++	save_start_addr_to_vbs
++	b	save_boot_params_ret
++ENDPROC(save_boot_params)
++
++#endif
+diff --git a/board/wb-obmc/ast/vboot-spl.c b/board/wb-obmc/ast/vboot-spl.c
+new file mode 100644
+index 00000000..a6335741
+--- /dev/null
++++ b/board/wb-obmc/ast/vboot-spl.c
+@@ -0,0 +1,693 @@
++/*
++ * (C) Copyright 2016-Present, Facebook, Inc.
++ *
++ * SPDX-License-Identifier: GPL-2.0+
++ */
++
++#define DEBUG
++#include <common.h>
++#include <spl.h>
++#include <asm/spl.h>
++#include <malloc.h>
++#include <u-boot/crc.h>
++
++#include <environment.h>
++
++#include <image.h>
++#include <linux/libfdt.h>
++
++#include <asm/arch/platform.h>
++#include <asm/arch/vbs.h>
++#include <asm/io.h>
++
++#include "flash-spl.h"
++#include "tpm-spl.h"
++#include "util.h"
++
++/* Size of RW environment parsable by ROM. */
++#define AST_ROM_ENV_MAX 0x200
++
++/* Max size of U-Boot FIT */
++#define AST_MAX_UBOOT_FIT 0x4000
++
++#define vboot_recovery(v, t, c)                                                \
++	do {                                                                   \
++		debug("%s %d\n", __func__, __LINE__);                          \
++		real_vboot_recovery((v), (t), (c));                            \
++	} while (0)
++
++#define vboot_enforce(v, t, c)                                                 \
++	do {                                                                   \
++		debug("%s %d\n", __func__, __LINE__);                          \
++		real_vboot_enforce((v), (t), (c));                             \
++	} while (0)
++
++DECLARE_GLOBAL_DATA_PTR;
++
++/**
++ * vboot_getenv_yesno() - Turn an environment variable into a boolean
++ *
++ * @param var the environment variable name
++ * @return 0 for false, 1 for true
++ */
++static u8 vboot_getenv_yesno(const char *var)
++{
++	const char *n = 0;
++	const char *v = 0;
++	int size = strlen(var);
++
++	/* Use a RW environment. */
++	volatile env_t *env = (volatile env_t *)CONFIG_ENV_ADDR;
++
++	int offset;
++	char last = 0;
++	char current = env->data[0];
++	for (offset = 1; offset < AST_ROM_ENV_MAX; ++offset) {
++		last = current;
++		current = env->data[offset];
++		if (last == 0 && current == 0) {
++			/* This is the end of the environment. */
++			return 0;
++		}
++
++		if (n == 0) {
++			/* This is the first variable. */
++			n = (const char *)&env->data[offset - 1];
++		} else if (current == 0) {
++			/* This is the end of a variable. */
++			v = 0;
++			n = (const char *)&env->data[offset + 1];
++		} else if (v == 0 && current == '=') {
++			v = (const char *)&env->data[offset + 1];
++			if (strncmp(n, var, size) == 0) {
++				if (*v == '1' || *v == 'y' || *v == 't' ||
++				    *v == 'T' || *v == 'Y') {
++					return 1;
++				}
++			}
++		}
++	}
++	return 0;
++}
++
++/**
++ * vboot_store() - Store the VBS state into SRAM
++ *
++ * @param pointer to vbs state
++ */
++void vboot_store(struct vbs *vbs)
++{
++	u32 rom_handoff;
++
++	rom_handoff = vbs->rom_handoff;
++	vbs->crc = 0;
++	vbs->rom_handoff = 0x0;
++	vbs->crc = crc16_ccitt(0, (uchar *)vbs, sizeof(struct vbs));
++	vbs->rom_handoff = rom_handoff;
++	memcpy((void *)AST_SRAM_VBS_BASE, vbs, sizeof(struct vbs));
++}
++
++/**
++ * vboot_jump() - Jump, or set the PC, to an address.
++ *
++ * @param to an address
++ */
++void __noreturn vboot_jump(volatile void *to, struct vbs *vbs)
++{
++	vboot_store(vbs);
++
++	if (to == 0x0) {
++		debug("Resetting CPU0\n");
++		reset_cpu(0);
++	}
++
++	debug("Blindly jumping to 0x%08x\n", (u32)to);
++	typedef void __noreturn (*image_entry_noargs_t)(void);
++	image_entry_noargs_t image_entry = (image_entry_noargs_t)to;
++	image_entry();
++}
++
++/**
++ * vboot_status() - Set the vboot status on the first error.
++ *
++ * @param t the error type (category)
++ * @param c the error code
++ */
++static void vboot_status(struct vbs *vbs, u8 t, u8 c)
++{
++	/* Store an error condition in the VBS structure for reporting/testing. */
++	if (t != VBS_SUCCESS && vbs->error_code == VBS_SUCCESS) {
++		/* Only store the initial error code and type. */
++		vbs->error_code = c;
++		vbs->error_type = t;
++	}
++}
++
++#ifdef CONFIG_ASPEED_TPM
++/**
++ * vboot_spl_do_measures() - Measure SPL, key-store, rec-uboot uboot-env.
++ */
++static void vboot_spl_do_measures(u8 *uboot, uint32_t uboot_size)
++{
++	printf("\n");
++
++	printf("measure SPL...");
++	ast_tpm_extend(AST_TPM_PCR_SPL, (unsigned char *)0x0,
++		       CONFIG_SPL_MAX_FOOTPRINT);
++	printf("done\n");
++
++	printf("measure key-store...");
++	ast_tpm_extend(AST_TPM_PCR_FIT,
++		       (unsigned char *)CONFIG_SYS_SPL_FIT_BASE,
++		       AST_MAX_UBOOT_FIT);
++	printf("done\n");
++
++	if (uboot_size) {
++		printf("measure U-Boot...");
++		ast_tpm_extend(AST_TPM_PCR_UBOOT, uboot, uboot_size);
++		printf("done\n");
++	} else {
++		printf("measure recovery U-Boot...");
++		ast_tpm_extend(AST_TPM_PCR_UBOOT,
++			       (unsigned char *)CONFIG_SYS_RECOVERY_BASE,
++			       CONFIG_RECOVERY_UBOOT_SIZE);
++		printf("done\n");
++	}
++
++	printf("measure U-Boot environment...");
++	ast_tpm_extend(AST_TPM_PCR_ENV, (unsigned char *)CONFIG_ENV_ADDR,
++		       CONFIG_ENV_SIZE);
++	printf("done\n");
++}
++#endif
++/**
++ * vboot_recovery() - Boot the Recovery U-Boot.
++ */
++static void real_vboot_recovery(struct vbs *vbs, u8 t, u8 c)
++{
++#ifdef CONFIG_ASPEED_TPM
++	int tpm_state = ast_tpm_get_state();
++	/* make sure TPM is provisioned */
++	if (AST_TPM_STATE_INIT == tpm_state) {
++		tpm_state = AST_TPM_STATE_GOOD;
++		if (ast_tpm_provision(vbs))
++			tpm_state = AST_TPM_STATE_FAIL;
++	}
++	/* make sure all PCRs used by SPL closed if TPM_STATE is good*/
++	if (AST_TPM_STATE_GOOD == tpm_state) {
++		vboot_spl_do_measures(0, 0);
++	}
++#endif /* ASPEED_TPM */
++
++	vboot_status(vbs, t, c);
++	/* Overwrite all of the verified boot flags we've defined. */
++	vbs->recovery_boot = 1;
++	vbs->recovery_retries += 1;
++	vbs->rom_handoff = 0x0;
++
++	/* Jump to the well-known location of the Recovery U-Boot. */
++	printf("Booting recovery U-Boot.\n");
++	vboot_jump((volatile void *)CONFIG_SYS_RECOVERY_BASE, vbs);
++}
++
++/**
++ * vboot_getenv_yesno() - Turn an environment variable into a boolean
++ *
++ * @param var the environment variable name
++ * @return 0 for false, 1 for true
++ */
++static void real_vboot_enforce(struct vbs *vbs, u8 t, u8 c)
++{
++	vboot_status(vbs, t, c);
++
++	if (vbs->hardware_enforce == 1 || vbs->software_enforce == 1) {
++		vboot_recovery(vbs, 0, 0);
++	}
++}
++
++void vboot_check_fit(void *fit, struct vbs *vbs, int *uboot, int *config,
++		     u32 *uboot_position, u32 *uboot_size)
++{
++	u32 fit_size;
++	int images_path;
++	int configs_path;
++
++	if (fdt_magic(fit) != FDT_MAGIC) {
++		/* FIT loading is not available or this U-Boot is not a FIT. */
++		/* This will bypass signature checking */
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_BAD_MAGIC);
++	}
++
++	fit_size = fdt_totalsize(fit);
++	fit_size = (fit_size + 3) & ~3;
++	if (fit_size > AST_MAX_UBOOT_FIT) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA,
++			       VBS_ERROR_INVALID_SIZE);
++	}
++
++	/* Node path to images */
++	images_path = fdt_path_offset(fit, FIT_IMAGES_PATH);
++	if (images_path < 0) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_IMAGES);
++	}
++
++	/* Be simple, select the first image. */
++	*uboot = fdt_first_subnode(fit, images_path);
++	if (*uboot < 0) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_FW);
++	}
++
++	/* Node path to configurations */
++	configs_path = fdt_path_offset(fit, FIT_CONFS_PATH);
++	if (configs_path < 0) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_CONFIG);
++	}
++
++	/* We only support a single configuration for U-Boot. */
++	*config = fdt_first_subnode(fit, configs_path);
++	if (*config < 0) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_CONFIG);
++	}
++
++	/* Get its information and set up the spl_image structure */
++	*uboot_position = fdt_getprop_u32(fit, *uboot, "data-position");
++	*uboot_size = fdt_getprop_u32(fit, *uboot, "data-size");
++
++	/*
++   * Check the sanity of U-Boot position and size.
++   * If there is a problem force recovery.
++   */
++	if (*uboot_size == 0 || *uboot_position == 0 || *uboot_size > 0xE0000 ||
++	    *uboot_position > 0xE0000) {
++		printf("Cannot find U-Boot firmware.\n");
++		vboot_recovery(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_BAD_FW);
++	}
++}
++
++void vboot_rollback_protection(const void *fit, uint8_t image, struct vbs *vbs)
++{
++	/* Only attempt to update timestamps if the TPM was provisioned. */
++	int root = fdt_path_offset(fit, "/");
++	int timestamp = fdt_getprop_u32(fit, root, "timestamp");
++	bool no_fallback =
++		(fdt_getprop(fit, root, "no-fallback", NULL) != NULL);
++	if (root < 0 || timestamp <= 0) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_RB,
++			      VBS_ERROR_ROLLBACK_MISSING);
++	}
++
++	int tpm_status =
++		ast_tpm_try_version(vbs, image, timestamp, no_fallback);
++	if (tpm_status != VBS_SUCCESS) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_RB, tpm_status);
++	}
++}
++
++void vboot_verify_subordinate(void *fit, struct vbs *vbs)
++{
++	/* Node path to keys */
++	int keys_path = fdt_path_offset(fit, VBS_KEYS_PATH);
++	if (keys_path < 0) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_KEYS);
++		return;
++	}
++
++	/* After the first image (uboot) expect to find the subordinate store. */
++	int subordinate = fdt_first_subnode(fit, keys_path);
++	if (subordinate < 0) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_KEYS);
++		return;
++	}
++
++	/* Access the data and data-size to call image verify directly. */
++	int subordinate_size = 0;
++	const char *data =
++		fdt_getprop(fit, subordinate, "data", &subordinate_size);
++	if (data != 0 && subordinate_size > 0) {
++		/* This can return success if none of the keys were attempted. */
++		int verified = 0;
++		if (fit_image_verify_required_sigs(
++			    fit, subordinate, data, subordinate_size,
++			    (const char *)vbs->rom_keys, &verified)) {
++			printf("Unable to verify required subordinate certificate store.\n");
++			vboot_enforce(vbs, VBS_ERROR_TYPE_FW,
++				      VBS_ERROR_KEYS_INVALID);
++		}
++
++		/* Check that at least 1 subordinate store was verified. */
++		if (verified == 0) {
++#ifdef CONFIG_ASPEED_TPM
++			vboot_rollback_protection(
++				data, AST_TPM_ROLLBACK_SUBORDINATE, vbs);
++#endif
++
++			/*
++	 * Change the certificate store to the subordinate after it is verified.
++         * This means the first image, 'firmware' is signed with a key that is NOT
++         * in ROM but rather signed by the verified subordinate key.
++         */
++			vbs->subordinate_keys = (u32)data;
++		} else {
++			printf("Subordinate certificate store was not verified.\n");
++			vboot_enforce(vbs, VBS_ERROR_TYPE_FW,
++				      VBS_ERROR_KEYS_UNVERIFIED);
++		}
++	} else {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_BAD_KEYS);
++	}
++}
++
++void vboot_verify_uboot(void *fit, struct vbs *vbs, void *load, int config,
++			int uboot, int uboot_size, uint8_t *uboot_hash)
++{
++	int verified = 0;
++	const char *sig_store = (const char *)vbs->rom_keys;
++	if (vbs->subordinate_keys != 0x0) {
++		// The subordinate keys values will be non-0 when verified.
++		sig_store = (const char *)vbs->subordinate_keys;
++	}
++
++	if (fit_config_verify_required_sigs(fit, config, sig_store,
++					    &verified)) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_FW, VBS_ERROR_FW_INVALID);
++	}
++
++	if (verified != 0) {
++		/* When verified is 0, then an image was verified. */
++		printf("U-Boot configuration was not verified.\n");
++		debug("Check that the 'required' field for each key- is set to 'conf'.\n");
++		debug("Check the board configuration for supported hash algorithms.\n");
++		vboot_enforce(vbs, VBS_ERROR_TYPE_FW, VBS_ERROR_FW_UNVERIFIED);
++		return;
++	}
++
++	/* Now verify the hash of the first image. */
++	char *error;
++	int hash = fdt_subnode_offset(fit, uboot, FIT_HASH_NODENAME);
++	if (fit_image_check_hash(fit, hash, load, uboot_size, uboot_hash,
++				 &error)) {
++		printf("\nU-Boot was not verified.\n");
++		vboot_enforce(vbs, VBS_ERROR_TYPE_FW, VBS_ERROR_FW_UNVERIFIED);
++		return;
++	}
++
++	printf("\nU-Boot verified.\n");
++}
++
++static void set_and_lock_hwstrap(bool should_lock)
++{
++/* currently only apply to AST2600 verified boot platform */
++#if defined(CONFIG_ASPEED_AST2600)
++
++/* SCU500, SCU504 and SCU508 */
++#define AST2600_HWSTRAP_SET_REG1 0x1E6E2500
++#define AST2600_HWSTRAP_CLEAR_REG1 0x1E6E2504
++#define AST2600_HWSTRAP_LOCK_REG1 0x1E6E2508
++#define AST2600_HWSTRAP_REG1_BIT_BOOT_EMMC (1UL << 2)
++#define AST2600_HWSTRAP_REG1_BIT_BOOT_DBUG_SPI (1UL << 3)
++#define AST2600_HWSTRAP_REG1_BIT_DISABLE_DBG_PATH_SET1 (1UL << 19)
++
++/* SCU510, SCU514 and SCU518 */
++#define AST2600_HWSTRAP_SET_REG2 0x1E6E2510
++#define AST2600_HWSTRAP_CLEAR_REG2 0x1E6E2514
++#define AST2600_HWSTRAP_LOCK_REG2 0x1E6E2518
++#define AST2600_HWSTRAP_REG2_BIT_DISABLE_DBG_PATH_SET2 (1UL << 4)
++#define AST2600_HWSTRAP_REG2_BIT_BOOT_UART (1UL << 8)
++#define AST2600_HWSTRAP_REG2_BIT_ABR_MODE_SINGLE_FLASH (1UL << 12)
++
++	u32 hwstrap_lock_reg1;
++	u32 hwstrap_lock_reg2;
++	if (should_lock) {
++		printf("runtime clear hwstraps:\n");
++		printf(" boot from emmc,debug-spi,uart and middle of flash0\n");
++		setbits_le32(AST2600_HWSTRAP_CLEAR_REG1,
++			     (AST2600_HWSTRAP_REG1_BIT_BOOT_EMMC |
++			      AST2600_HWSTRAP_REG1_BIT_BOOT_DBUG_SPI));
++		setbits_le32(AST2600_HWSTRAP_CLEAR_REG2,
++			     (AST2600_HWSTRAP_REG2_BIT_BOOT_UART |
++			      AST2600_HWSTRAP_REG2_BIT_ABR_MODE_SINGLE_FLASH));
++		printf("runtime set hwstraps: disable debug path\n");
++		setbits_le32(AST2600_HWSTRAP_SET_REG1,
++			     AST2600_HWSTRAP_REG1_BIT_DISABLE_DBG_PATH_SET1);
++		setbits_le32(AST2600_HWSTRAP_SET_REG2,
++			     AST2600_HWSTRAP_REG2_BIT_DISABLE_DBG_PATH_SET2);
++		printf("runtime protect all these hwstraps from changing\n");
++		setbits_le32(AST2600_HWSTRAP_LOCK_REG1,
++			     (AST2600_HWSTRAP_REG1_BIT_BOOT_EMMC |
++			      AST2600_HWSTRAP_REG1_BIT_BOOT_DBUG_SPI |
++			      AST2600_HWSTRAP_REG1_BIT_DISABLE_DBG_PATH_SET1));
++		setbits_le32(AST2600_HWSTRAP_LOCK_REG2,
++			     (AST2600_HWSTRAP_REG2_BIT_DISABLE_DBG_PATH_SET2 |
++			      AST2600_HWSTRAP_REG2_BIT_BOOT_UART |
++			      AST2600_HWSTRAP_REG2_BIT_ABR_MODE_SINGLE_FLASH));
++	}
++	hwstrap_lock_reg1 = readl(AST2600_HWSTRAP_LOCK_REG1);
++	hwstrap_lock_reg2 = readl(AST2600_HWSTRAP_LOCK_REG2);
++	printf("hwstrap write protect SCU508=0x%08x, SCU518=0x%08x\n",
++	       hwstrap_lock_reg1, hwstrap_lock_reg2);
++
++#endif
++}
++
++void vboot_reset(struct vbs *vbs)
++{
++	volatile struct vbs *current = (volatile struct vbs *)AST_SRAM_VBS_BASE;
++
++	memset((void *)vbs, 0, sizeof(struct vbs));
++	vbs->rom_exec_address = current->uboot_exec_address;
++	vbs->recovery_retries = current->recovery_retries;
++	vbs->rom_handoff = current->rom_handoff;
++	if (vbs->recovery_retries >= 25) {
++		/* Retries has hit an impossible upper bound, reset to 0. */
++		vbs->recovery_retries = 0;
++	}
++
++	if (vbs->rom_handoff == VBS_HANDOFF) {
++		printf("U-Boot failed to execute.\n");
++		ast_fmc_spi_check(false);
++		vboot_recovery(vbs, VBS_ERROR_TYPE_SPI,
++			       VBS_ERROR_EXECUTE_FAILURE);
++	}
++
++	/* Keep track of requested and valid H/W enforce enable scenario. */
++	bool should_lock = false;
++	/* Verified boot is not possible if the SPL does not include a KEK. */
++	const void *rom_fdt = (const void *)gd_fdt_blob();
++	vbs->rom_keys = (u32)rom_fdt;
++	if (rom_fdt == 0x0) {
++		/* It is possible the spl_init method did not find a fdt. */
++		printf("No signature store (KEK) was included in the SPL.\n");
++		vboot_enforce(vbs, VBS_ERROR_TYPE_DATA, VBS_ERROR_NO_KEK);
++	} else {
++		/* Check if there is a signature subnode and the /hwlock path exists. */
++		if (fdt_subnode_offset(rom_fdt, 0, FIT_SIG_NODENAME) >= 0 &&
++		    fdt_getprop_u32(rom_fdt, 0, "hwlock") == 1) {
++			should_lock = true;
++		}
++	}
++	/* check and lock hwstrap for AST2600 platform */
++	set_and_lock_hwstrap(should_lock);
++	/* Reset FMC SPI PROMs and check WP# for FMC SPI CS0. */
++	int spi_status = ast_fmc_spi_check(should_lock);
++	/* The presence of WP# on FMC SPI CS0 determines hardware enforcement. */
++	vbs->hardware_enforce = (spi_status == AST_FMC_WP_ON) ? 1 : 0;
++	if (spi_status == AST_FMC_ERROR) {
++		/* The QEMU models will always return SPI PROM errors. */
++#ifndef CONFIG_DEBUG_QEMU
++		vboot_recovery(vbs, VBS_ERROR_TYPE_SPI, VBS_ERROR_SPI_PROM);
++#endif
++	}
++
++	/* set rom_handoff only if no valid handoff been set yet
++	 *  which means this is a clean (re)boot:
++	 *   a) AC-Power on
++	 *   b) reboot from OpenBMC
++	 */
++	if ((vbs->rom_handoff != VBS_HANDOFF) &&
++	    (vbs->rom_handoff != VBS_HANDOFF_TPM_SETUP) &&
++	    (vbs->rom_handoff != VBS_HANDOFF_TPM_RST) &&
++	    (vbs->rom_handoff != VBS_HANDOFF_SWAP)) {
++		/* Set a handoff and expect U-Boot to clear indicating a clean boot. */
++		vbs->recovery_retries = 0;
++		vbs->rom_handoff = VBS_HANDOFF;
++		vboot_store(vbs);
++	}
++
++#ifdef CONFIG_TEST_ASPEED_WATCHDOG_SPL
++	printf("Testing SPL hang recovery ...\n");
++	hang();
++#endif
++
++#ifdef CONFIG_ASPEED_TPM
++	int tpm_status = ast_tpm_provision(vbs);
++	if (tpm_status == VBS_ERROR_TPM_SETUP) {
++		/* The TPM was not reset correctly */
++		debug("TPM was not reset correctly, cur->rom_handoff=%d\n",
++		      current->rom_handoff);
++		if (current->rom_handoff != VBS_HANDOFF_TPM_SETUP) {
++			vbs->rom_handoff = VBS_HANDOFF_TPM_SETUP;
++			vboot_jump(0x0, vbs);
++		}
++	}
++
++	if (tpm_status == VBS_ERROR_TPM_RESET_NEEDED) {
++		if (current->rom_handoff == VBS_HANDOFF_TPM_RST) {
++			/* The TPM needed a reset before, and needs another, this is a problem. */
++			printf("TPM was deactivated and remains so after a reset.\n");
++			vboot_enforce(vbs, VBS_ERROR_TYPE_TPM,
++				      VBS_ERROR_TPM_RESET_NEEDED);
++		} else {
++			printf("TPM was deactivated and needs a reset.\n");
++			vbs->rom_handoff = VBS_HANDOFF_TPM_RST;
++			vboot_jump(0x0, vbs);
++		}
++	} else if (tpm_status != VBS_SUCCESS) {
++		/* The TPM could not be provisioned. */
++		vboot_enforce(vbs, VBS_ERROR_TYPE_TPM, tpm_status);
++		return;
++	}
++
++	tpm_status = ast_tpm_owner_provision(vbs);
++	if (tpm_status != VBS_SUCCESS) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_TPM, tpm_status);
++		return;
++	}
++
++	/* Only attempt to provision the NV space if the TPM was provisioned. */
++	tpm_status = ast_tpm_nv_provision(vbs);
++	if (tpm_status != VBS_SUCCESS) {
++		vboot_enforce(vbs, VBS_ERROR_TYPE_NV, tpm_status);
++		return;
++	}
++#endif
++}
++
++void vboot_load_fit(volatile void *from)
++{
++	void *fit = (void *)from;
++
++	/* Set the VBS structure to the expected location in SRAM. */
++	struct vbs *vbs = (struct vbs *)malloc(sizeof(struct vbs));
++
++	/* The AST comes out of reset so we check the previous state and SPI PROMs. */
++	vboot_reset(vbs);
++
++	/* The offset into the FIT containing signed configuration. */
++	int config;
++	/* The offset into the FIT containing U-Boot information. */
++	int uboot;
++	/* The offset after the FIT containing U-Boot. */
++	u32 uboot_position;
++	/* The size of U-Boot content following the FIT */
++	u32 uboot_size;
++	/* uboot hash extracted fro FIT */
++	uint8_t uboot_hash[FIT_MAX_HASH_LEN];
++
++	/* Check the sanity of the FIT. */
++	vboot_check_fit(fit, vbs, &uboot, &config, &uboot_position,
++			&uboot_size);
++
++	/* Check for software enforcement and forced recovery */
++	vbs->software_enforce = vboot_getenv_yesno("verify");
++	vbs->force_recovery = vboot_getenv_yesno("force_recovery");
++	if (vbs->force_recovery == 1) {
++		vboot_recovery(vbs, VBS_ERROR_TYPE_FORCE,
++			       VBS_ERROR_FORCE_RECOVERY);
++	}
++
++	if (fdt_subnode_offset((const void *)vbs->rom_keys, 0,
++			       FIT_SIG_NODENAME) >= 0) {
++		/* If the SPL contains a KEK then verification is enforced. */
++		vbs->software_enforce = 1;
++	}
++
++	/* Verify subordinate keys kept in the FIT */
++	vboot_verify_subordinate(fit, vbs);
++
++	/* If verified boot is successful the next load is U-Boot. */
++	void *load = (void *)((u32)from + uboot_position);
++
++	/* Finally verify U-Boot using the subordinate store if verified. */
++	vboot_verify_uboot(fit, vbs, load, config, uboot, uboot_size,
++			   uboot_hash);
++
++#ifdef CONFIG_ASPEED_TPM
++	vboot_rollback_protection(fit, AST_TPM_ROLLBACK_UBOOT, vbs);
++	if (vbs->hardware_enforce || vbs->software_enforce) {
++		vboot_spl_do_measures(uboot_hash, FIT_MAX_HASH_LEN);
++	}
++#endif
++
++	vboot_jump((volatile void *)load, vbs);
++}
++
++void board_init_f(ulong bootflag)
++{
++#if defined(CONFIG_ASPEED_AST2600)
++	u32 fmc_ce_ctrl;
++	/* stop the FMCWDT2 as common lowlevel init code leave FMCWDT2 handling
++	 * to application. verified boot don't use FMCWDT2
++	 */
++	writel(0, ASPEED_FMC_WDT2);
++	spl_early_init();
++	preloader_console_init();
++	timer_init();
++	debug("SYS_INIT_RAM_END=%x \n", SYS_INIT_RAM_END);
++	debug("CONFIG_SYS_INIT_SP_ADDR=%x\n", CONFIG_SYS_INIT_SP_ADDR);
++	debug("CONFIG_MALLOC_F_ADDR=%x\n", CONFIG_MALLOC_F_ADDR);
++	debug("gd = sp = %p\n", gd);
++	debug("fdt=%p\n", gd->fdt_blob);
++	debug("Setup flash: write enable, addr4B, CE1 AHB 64MB window\n");
++	setbits_le32(ASPEED_FMC_BASE, (7 << 16));
++	udelay(1000);
++	if (IS_ENABLED(CONFIG_QEMU_BUILD)) {
++		/* QEMU SPI flash always 3B before probing */
++		clrbits_le32(ASPEED_FMC_BASE + 0x4, 0x33);
++		udelay(1000);
++		fmc_ce_ctrl = readl(ASPEED_FMC_BASE + 0x4);
++		printf("!!!QEMU!!! FMC_CE_CTRL = 0x%08X\n", fmc_ce_ctrl);
++	} else {
++		/* H/W SPI flash can always use 4B before probing
++		* Winbond: manufacturing set 4B to NV-status register
++		* Macronix: accept 4B addr cmd w/o need explict EN4B
++		*/
++		setbits_le32(ASPEED_FMC_BASE + 0x4, 0x33);
++		udelay(1000);
++		fmc_ce_ctrl = readl(ASPEED_FMC_BASE + 0x4);
++		debug("Setup FMC_CE_CTRL = 0x%08X\n", fmc_ce_ctrl);
++	}
++	writel(0x2BF02800, ASPEED_FMC_BASE + 0x34);
++	udelay(1000);
++#else /* CONFIG_ASPEED_AST2600 */
++	/* Must set up console for printing/logging. */
++	preloader_console_init();
++	/* Must set up global data pointers for local device tree. */
++	spl_init();
++
++	gd->malloc_base = CONFIG_SYS_SPL_MALLOC_START;
++	gd->malloc_limit = CONFIG_SYS_SPL_MALLOC_SIZE;
++#endif
++	watchdog_init(CONFIG_ASPEED_WATCHDOG_SPL_TIMEOUT);
++
++	if (!pfr_checkpoint(0x01)) { // CHKPT_START
++		printf("PFR: UFM provisioned\n");
++		typedef void __noreturn (*image_entry_noargs_t)(void);
++		image_entry_noargs_t image_entry =
++			(image_entry_noargs_t)CONFIG_SYS_RECOVERY_BASE;
++		image_entry();
++	}
++
++	vboot_load_fit((volatile void *)CONFIG_SYS_SPL_FIT_BASE);
++	hang();
++}
++
++u32 spl_boot_device()
++{
++	/* Include this NOP symbol to use the SPL_FRAMEWORK APIs. */
++	return BOOT_DEVICE_NONE;
++}
++
++void spl_display_print()
++{
++	/* Nothing */
++}
+diff --git a/board/wb-obmc/ast/vboot-spl.lds b/board/wb-obmc/ast/vboot-spl.lds
+new file mode 100644
+index 00000000..7739f494
+--- /dev/null
++++ b/board/wb-obmc/ast/vboot-spl.lds
+@@ -0,0 +1,106 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Copyright (c) 2004-2008 Texas Instruments
++ *
++ * (C) Copyright 2002
++ * Gary Jennejohn, DENX Software Engineering, <garyj@denx.de>
++ *
++ * (C) Copyright 2021 Facebook, Inc.,
++ */
++
++/*
++ * base arch/arm/cpu/u-boot-spl.lds
++ * add vboot alter boot blocking code placement and checking
++ */
++
++OUTPUT_FORMAT("elf32-littlearm", "elf32-littlearm", "elf32-littlearm")
++OUTPUT_ARCH(arm)
++ENTRY(_start)
++SECTIONS
++{
++	. = 0x00000000;
++
++	. = ALIGN(4);
++	.text :
++	{
++		__image_copy_start = .;
++		*(.vectors)
++		CPUDIR/start.o (.text*)
++		*(.text.vboot_abb)
++		__vboot_abb_end = .;
++		*(.text*)
++		*(.glue*)
++	}
++
++	. = ALIGN(4);
++	.rodata : { *(SORT_BY_ALIGNMENT(SORT_BY_NAME(.rodata*))) }
++
++	. = ALIGN(4);
++	.data : {
++		*(.data*)
++	}
++
++	. = ALIGN(4);
++	.u_boot_list : {
++		KEEP(*(SORT(.u_boot_list*)));
++	}
++
++	. = ALIGN(4);
++	.binman_sym_table : {
++		__binman_sym_start = .;
++		KEEP(*(SORT(.binman_sym*)));
++		__binman_sym_end = .;
++	}
++
++	. = ALIGN(4);
++
++	__image_copy_end = .;
++
++	.rel.dyn : {
++		__rel_dyn_start = .;
++		*(.rel*)
++		__rel_dyn_end = .;
++	}
++
++	.end :
++	{
++		*(.__end)
++	}
++
++	_image_binary_end = .;
++
++	.bss __rel_dyn_start (OVERLAY) : {
++		__bss_start = .;
++		*(.bss*)
++		 . = ALIGN(4);
++		__bss_end = .;
++	}
++	__bss_size = __bss_end - __bss_start;
++	.dynsym _image_binary_end : { *(.dynsym) }
++	.dynbss : { *(.dynbss) }
++	.dynstr : { *(.dynstr*) }
++	.dynamic : { *(.dynamic*) }
++	.hash : { *(.hash*) }
++	.plt : { *(.plt*) }
++	.interp : { *(.interp*) }
++	.gnu : { *(.gnu*) }
++	.ARM.exidx : { *(.ARM.exidx*) }
++}
++
++#if defined(IMAGE_MAX_SIZE)
++ASSERT(__image_copy_end - __image_copy_start < (IMAGE_MAX_SIZE), \
++	"SPL image too big");
++#endif
++
++#if defined(CONFIG_SPL_BSS_MAX_SIZE)
++ASSERT(__bss_end - __bss_start < (CONFIG_SPL_BSS_MAX_SIZE), \
++	"SPL image BSS too big");
++#endif
++
++#if defined(CONFIG_SPL_MAX_FOOTPRINT)
++ASSERT(__bss_end - _start < (CONFIG_SPL_MAX_FOOTPRINT), \
++	"SPL image plus BSS too big");
++#endif
++
++ASSERT(__vboot_abb_end < 0x10000, \
++	"ABB not located within first block(64KB)"  )
+diff --git a/board/wb-obmc/ast/vboot.c b/board/wb-obmc/ast/vboot.c
+new file mode 100644
+index 00000000..d0a30487
+--- /dev/null
++++ b/board/wb-obmc/ast/vboot.c
+@@ -0,0 +1,117 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) 2021 Facebook Inc.
++ */
++
++#include <common.h>
++#include <asm/arch/vbs.h>
++#include "tpm-spl.h"
++
++
++#ifdef CONFIG_ASPEED_TPM
++static int vboot_get_image_hash_from_fit(uint8_t *fit, int image_offset,
++				uint8_t **valuep, int *value_lenp)
++{
++	int hash_offset;
++	uint8_t *value = 0;
++	int value_len = 0;
++	int ret = -1;
++
++	log_debug("Get hash from fit 0x%p(%d)\n", fit, image_offset);
++	hash_offset = fdt_subnode_offset(fit, image_offset, FIT_HASH_NODENAME);
++	if (hash_offset < 0) {
++		log_err("No hash subnode in fit = %p, image = %d\n",
++			fit, image_offset);
++		return ret;
++	}
++
++	ret = fit_image_hash_get_value(fit, hash_offset, &value, &value_len);
++	if (ret)
++		return ret;
++
++	log_debug("hash[%d]:\n", value_len);
++	log_debug_buffer( value, value_len );
++	if (valuep) *valuep = value;
++	if (value_lenp) *value_lenp = value_len;
++
++	return ret;
++}
++
++static void vboot_uboot_do_measures(volatile struct vbs *vbs)
++{
++	uint8_t *value;
++	int value_len;
++
++	printf("\n");
++	printf("measure vbs...");
++	ast_tpm_extend(AST_TPM_PCR_VBS, (uint8_t *)vbs, sizeof(struct vbs));
++	printf("done\n");
++
++	printf("measure OS-Kernel...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_os, images.fit_noffset_os,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++
++	printf("measure Ramdisk...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_rd, images.fit_noffset_rd,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++
++	printf("measure Fdt...");
++	value = 0; value_len = 0;
++	vboot_get_image_hash_from_fit(images.fit_hdr_fdt, images.fit_noffset_fdt,
++		&value, &value_len);
++	ast_tpm_extend(AST_TPM_PCR_OS, value, value_len);
++	printf("done\n");
++}
++#endif
++
++static void vboot_finish(void)
++{
++	/* Clean the handoff marker from ROM. */
++	volatile struct vbs *vbs = (volatile struct vbs *)AST_SRAM_VBS_BASE;
++
++#if 	defined(CONFIG_TEST_ASPEED_WATCHDOG_UBOOT) && \
++	!defined(CONFIG_ASPEED_RECOVERY_BUILD)
++	printf("Testing U-Boot hang recovery ...");
++	hang();
++#endif
++
++	vbs->rom_handoff = 0x0;
++
++#ifdef CONFIG_ASPEED_TPM
++	if (vbs->hardware_enforce || vbs->software_enforce ||
++	    vbs->recovery_boot) {
++		/* Only do measure when verifiy boot is enabled */
++		vboot_uboot_do_measures(vbs);
++	}
++	ast_tpm_finish();
++#endif
++
++}
++
++char *fit_cert_store(void)
++{
++	volatile struct vbs *vbs = (volatile struct vbs *)AST_SRAM_VBS_BASE;
++	return (char *)(vbs->subordinate_keys);
++}
++
++void arch_preboot_os(void)
++{
++	vboot_finish();
++}
++
++void vboot_check_enforce(void)
++{
++	/* Clean the handoff marker from ROM. */
++	volatile struct vbs *vbs = (volatile struct vbs *)AST_SRAM_VBS_BASE;
++	if (vbs->hardware_enforce) {
++		/* If we are hardware-enforcing then this U-Boot is verified. */
++		env_set("verify", "yes");
++	}
++}
++
+diff --git a/common/image-fit.c b/common/image-fit.c
+index 95928012..4600a2b4 100644
+--- a/common/image-fit.c
++++ b/common/image-fit.c
+@@ -1481,6 +1481,9 @@ int fit_conf_get_node(const void *fit, const char *conf_uname)
+ 	int len;
+ 	const char *s;
+ 	char *conf_uname_copy = NULL;
++#ifndef USE_HOSTCC
++    char def_conf_fit[DEF_CONF_FIT_NAME_LEN], *conf_fit_env;
++#endif
+ 
+ 	confs_noffset = fdt_path_offset(fit, FIT_CONFS_PATH);
+ 	if (confs_noffset < 0) {
+@@ -1492,8 +1495,21 @@ int fit_conf_get_node(const void *fit, const char *conf_uname)
+ 	if (conf_uname == NULL) {
+ 		/* get configuration unit name from the default property */
+ 		debug("No configuration specified, trying default...\n");
+-		conf_uname = (char *)fdt_getprop(fit, confs_noffset,
+-						 FIT_DEFAULT_PROP, &len);
++#ifdef USE_HOSTCC
++        conf_uname = (char *)fdt_getprop(fit, confs_noffset,
++                         FIT_DEFAULT_PROP, &len);
++#else
++        memset(def_conf_fit, '\0', DEF_CONF_FIT_NAME_LEN);
++        conf_fit_env = env_get("conffitname");
++        if (conf_fit_env != NULL) {
++            sprintf(def_conf_fit, "conf@aspeed-bmc-%s.dtb", conf_fit_env);
++            printf("   Product conf: %s\n", def_conf_fit);
++            conf_uname = def_conf_fit;
++        } else {
++            conf_uname = (char *)fdt_getprop(fit, confs_noffset,
++                             FIT_DEFAULT_PROP, &len);
++        }
++#endif
+ 		if (conf_uname == NULL) {
+ 			fit_get_debug(fit, confs_noffset, FIT_DEFAULT_PROP,
+ 				      len);
+diff --git a/common/main.c b/common/main.c
+index 330aa810..4de23030 100644
+--- a/common/main.c
++++ b/common/main.c
+@@ -14,6 +14,8 @@
+ 
+ extern int watchdog_init(u32 timeout_sec);
+ extern int pfr_checkpoint(uint cmd);
++int env_save(void);
++
+ 
+ /*
+  * Board-specific Platform code can reimplement show_boot_progress () if needed
+@@ -49,6 +51,7 @@ void main_loop(void)
+ {
+ 	int ret;
+ 	const char *s;
++    const char *ver_str;
+ #ifdef CONFIG_CMD_MEMTEST2
+ 	char *mtest;
+ #endif /* CONFIG_CMD_MEMTEST2 */
+@@ -75,8 +78,13 @@ void main_loop(void)
+     }
+ #endif /*CONFIG_CMD_CS1TEST*/
+ 
+-	if (IS_ENABLED(CONFIG_VERSION_VARIABLE))
+-		env_set("ver", version_string);  /* set version variable */
++	if (IS_ENABLED(CONFIG_VERSION_VARIABLE)) {
++        ver_str = env_get("ver");
++        if (ver_str == NULL || strcmp(ver_str, version_string) != 0) {
++            env_set("ver", version_string);  /* set version variable */
++            env_save();
++        }
++    }
+ 
+ 	cli_init();
+ 
+diff --git a/configs/cpo-ast2500_defconfig b/configs/cpo-ast2500_defconfig
+new file mode 100644
+index 00000000..59afae18
+--- /dev/null
++++ b/configs/cpo-ast2500_defconfig
+@@ -0,0 +1,94 @@
++# Target
++CONFIG_TARGET_WB_AST_GEN_5=y
++CONFIG_SYS_CONFIG_NAME="cpo_ast2500"
++CONFIG_DEFAULT_DEVICE_TREE="wb_ast2500"
++
++# ARCH choices
++CONFIG_ARM=y
++CONFIG_ARCH_ASPEED=y
++CONFIG_ASPEED_AST2500=y
++
++# temp
++CONFIG_ARCH_AST2500=y
++
++
++# common configuration
++CONFIG_DM_RESET=y
++CONFIG_BAUDRATE=9600
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_SYS_NS16550=y
++CONFIG_CMD_IMI=y
++CONFIG_OF_LIBFDT=y
++CONFIG_OF_CONTROL=y
++# CONFIG_OF_EMBED=y use for debug only
++CONFIG_OF_SEPARATE=y
++CONFIG_FIT=y
++CONFIG_FIT_VERBOSE=y
++# CONFIG_FIT_SIGNATURE=y
++CONFIG_DM=y
++CONFIG_DM_I2C=y
++CONFIG_CMD_I2C=y
++CONFIG_MISC=y
++# CONFIG_TPM=y use for TPM support platform
++# CONFIG_CMD_TPM=y
++CONFIG_TIMER=y
++# CONFIG_DISPLAY_CPUINFO is not set
++
++# Migrate to upstream
++CONFIG_CLK=y
++CONFIG_WDT=y
++CONFIG_WDT_ASPEED=y
++CONFIG_SYSRESET=y
++CONFIG_AST_TIMER=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_SPI_FLASH=y
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH_MTD=y
++CONFIG_SPI_FLASH_MACRONIX=y
++CONFIG_SPI_FLASH_WINBOND=y
++CONFIG_CMD_SF=y
++
++CONFIG_DM_ETH=y
++CONFIG_FTGMAC100=y
++CONFIG_PHY=y
++CONFIG_PHYLIB=y
++CONFIG_PHY_GIGE=y
++CONFIG_PHY_BROADCOM=y
++CONFIG_PINCTRL=y
++CONFIG_DM_GPIO=y
++CONFIG_ASPEED_GPIO=y
++
++
++# FBoss Extra
++CONFIG_SYS_TEXT_BASE=0x0
++CONFIG_SPI_BOOT=y
++CONFIG_HUSH_PARSER=y
++CONFIG_NETCONSOLE=y
++CONFIG_NETDEVICES=y
++CONFIG_DEBUG_UART=y
++CONFIG_DEBUG_UART_BASE=0x1E783000
++CONFIG_DEBUG_UART_CLOCK=24000000
++CONFIG_SYS_PROMPT="wb-boot=> "
++CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
++
++# Disabled commands (save space)
++CONFIG_CMD_IMLS=n
++CONFIG_CMD_FDT=n
++CONFIG_CMD_ELF=n
++CONFIG_CMD_XIMG=n
++# CONFIG_CMD_NET=n
++CONFIG_EFI_LOADER=n
++CONFIG_CMD_FPGA=n
++CONFIG_CMD_SETEXPR=n
++
++# debug
++CONFIG_LOGLEVEL=7
++
++CONFIG_ASPEED_WRITE_DEFAULT_ENV=y
++CONFIG_SPI_FLASH_SPANSION=y
++CONFIG_VERSION_VARIABLE=y
++CONFIG_BOARD_LATE_INIT=y
++CONFIG_PHY_FIXED=y
++CONFIG_PHY_NCSI=y
++CONFIG_CMD_NCSI=y
+\ No newline at end of file
+diff --git a/configs/wb-ast2500_defconfig b/configs/wb-ast2500_defconfig
+new file mode 100644
+index 00000000..6d388290
+--- /dev/null
++++ b/configs/wb-ast2500_defconfig
+@@ -0,0 +1,94 @@
++# Target
++CONFIG_TARGET_WB_AST_GEN_5=y
++CONFIG_SYS_CONFIG_NAME="wb_ast2500"
++CONFIG_DEFAULT_DEVICE_TREE="wb_ast2500"
++
++# ARCH choices
++CONFIG_ARM=y
++CONFIG_ARCH_ASPEED=y
++CONFIG_ASPEED_AST2500=y
++
++# temp
++CONFIG_ARCH_AST2500=y
++
++
++# common configuration
++CONFIG_DM_RESET=y
++CONFIG_BAUDRATE=115200
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_SYS_NS16550=y
++CONFIG_CMD_IMI=y
++CONFIG_OF_LIBFDT=y
++CONFIG_OF_CONTROL=y
++# CONFIG_OF_EMBED=y use for debug only
++CONFIG_OF_SEPARATE=y
++CONFIG_FIT=y
++CONFIG_FIT_VERBOSE=y
++# CONFIG_FIT_SIGNATURE=y
++CONFIG_DM=y
++CONFIG_DM_I2C=y
++CONFIG_CMD_I2C=y
++CONFIG_MISC=y
++# CONFIG_TPM=y use for TPM support platform
++# CONFIG_CMD_TPM=y
++CONFIG_TIMER=y
++# CONFIG_DISPLAY_CPUINFO is not set
++
++# Migrate to upstream
++CONFIG_CLK=y
++CONFIG_WDT=y
++CONFIG_WDT_ASPEED=y
++CONFIG_SYSRESET=y
++CONFIG_AST_TIMER=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_SPI_FLASH=y
++CONFIG_DM_SPI_FLASH=y
++CONFIG_SPI_FLASH_MTD=y
++CONFIG_SPI_FLASH_MACRONIX=y
++CONFIG_SPI_FLASH_WINBOND=y
++CONFIG_CMD_SF=y
++
++CONFIG_DM_ETH=y
++CONFIG_FTGMAC100=y
++CONFIG_PHY=y
++CONFIG_PHYLIB=y
++CONFIG_PHY_GIGE=y
++CONFIG_PHY_BROADCOM=y
++CONFIG_PINCTRL=y
++CONFIG_DM_GPIO=y
++CONFIG_ASPEED_GPIO=y
++
++
++# FBoss Extra
++CONFIG_SYS_TEXT_BASE=0x0
++CONFIG_SPI_BOOT=y
++CONFIG_HUSH_PARSER=y
++CONFIG_NETCONSOLE=y
++CONFIG_NETDEVICES=y
++CONFIG_DEBUG_UART=y
++CONFIG_DEBUG_UART_BASE=0x1E783000
++CONFIG_DEBUG_UART_CLOCK=24000000
++CONFIG_SYS_PROMPT="wb-boot=> "
++CONFIG_ASPEED_ENABLE_DUAL_BOOT_WATCHDOG=y
++
++# Disabled commands (save space)
++CONFIG_CMD_IMLS=n
++CONFIG_CMD_FDT=n
++CONFIG_CMD_ELF=n
++CONFIG_CMD_XIMG=n
++# CONFIG_CMD_NET=n
++CONFIG_EFI_LOADER=n
++CONFIG_CMD_FPGA=n
++CONFIG_CMD_SETEXPR=n
++
++# debug
++CONFIG_LOGLEVEL=7
++
++CONFIG_ASPEED_WRITE_DEFAULT_ENV=y
++CONFIG_SPI_FLASH_SPANSION=y
++CONFIG_VERSION_VARIABLE=y
++CONFIG_BOARD_LATE_INIT=y
++CONFIG_PHY_FIXED=y
++CONFIG_PHY_NCSI=y
++CONFIG_CMD_NCSI=y
+\ No newline at end of file
+diff --git a/drivers/clk/aspeed/clk_ast2500.c b/drivers/clk/aspeed/clk_ast2500.c
+index 4fab3358..8f60b3e2 100644
+--- a/drivers/clk/aspeed/clk_ast2500.c
++++ b/drivers/clk/aspeed/clk_ast2500.c
+@@ -80,7 +80,7 @@ extern u32 ast2500_get_hpll_rate(struct ast2500_scu *scu)
+ {
+ 	u32 clkin = ast2500_get_clkin(scu);
+ 	u32 hpll_reg = readl(&scu->h_pll_param);
+-	
++
+ 	/* F = clkin * [(M+1) / (N+1)] / (P + 1) */
+ 	const ulong num = (hpll_reg & SCU_HPLL_NUM_MASK) >> SCU_HPLL_NUM_SHIFT;
+ 	const ulong denum = (hpll_reg & SCU_HPLL_DENUM_MASK)
+@@ -134,7 +134,7 @@ static u32 ast2500_get_hclk(struct ast2500_scu *scu)
+ 	ulong ahb_div = 1 + ((readl(&scu->hwstrap)
+ 			      & SCU_HWSTRAP_AXIAHB_DIV_MASK)
+ 			     >> SCU_HWSTRAP_AXIAHB_DIV_SHIFT);
+-	
++
+ 	ulong axi_div = 2;
+ 	u32 rate = 0;
+ 
+@@ -158,7 +158,7 @@ static u32 ast2500_get_sdio_clk_rate(struct ast2500_scu *scu)
+ 	u32 clkin = ast2500_get_hpll_rate(scu);
+ 	u32 clk_sel = readl(&scu->clk_sel1);
+ 	u32 div = (clk_sel >> 12) & 0x7;
+-	
++
+ 	div = (div + 1) << 2;
+ 
+ 	return (clkin / div);
+@@ -201,7 +201,7 @@ static ulong ast2500_clk_get_rate(struct clk *clk)
+ 		break;
+ 	case ASPEED_CLK_DPLL:
+ 		rate = ast2500_get_dpll_rate(priv->scu);
+-		break;	
++		break;
+ 	case ASPEED_CLK_D2PLL:
+ 		rate = ast2500_get_d2pll_rate(priv->scu);
+ 		break;
+@@ -438,7 +438,11 @@ static ulong ast2500_configure_mac(struct ast2500_scu *scu, int index)
+ 		| (RMII_RXCLK_IDLY << SCU_MICDS_MAC2RMII_RDLY_SHIFT)
+ 		| (RGMII_TXCLK_ODLY << SCU_MICDS_MAC1RGMII_TXDLY_SHIFT)
+ 		| (RGMII_TXCLK_ODLY << SCU_MICDS_MAC2RGMII_TXDLY_SHIFT);
+-	
++
++	u32 mac1_clk_delay_settings =
++		SCU_MICDS_RGMIIPLL
++		|(RMII_RXCLK_IDLY << SCU_MICDS_MAC1RMII_RDLY_SHIFT)
++		| (RGMII_TXCLK_ODLY << SCU_MICDS_MAC1RGMII_TXDLY_SHIFT);
+ 	/*
+ 	 * According to data sheet, for 10/100 mode the MAC clock frequency
+ 	 * should be at least 25MHz and for 1000 mode at least 100MHz
+@@ -492,7 +496,12 @@ static ulong ast2500_configure_mac(struct ast2500_scu *scu, int index)
+ 	       | (RGMII1_TXCK_DUTY << SCU_CLKDUTY_RGMII1TXCK_SHIFT),
+ 	       &scu->clk_duty_sel);
+ 
+-	writel(clk_delay_settings | SCU_MICDS_RGMIIPLL, &scu->mac_clk_delay);
++    /* only set mac1 clock delay */
++	clrsetbits_le32(&scu->mac_clk_delay,
++        SCU_MICDS_MAC1RGMII_TXDLY_MASK | SCU_MICDS_MAC1RMII_RDLY_MASK,
++        mac1_clk_delay_settings);
++
++	/* writel(clk_delay_settings | SCU_MICDS_RGMIIPLL, &scu->mac_clk_delay); */
+ 	writel(clk_delay_settings, &scu->mac_clk_delay_100M);
+ 	writel(clk_delay_settings, &scu->mac_clk_delay_10M);
+ 
+@@ -510,7 +519,7 @@ static ulong ast2500_enable_sdclk(struct ast2500_scu *scu)
+ 
+ 	setbits_le32(&scu->sysreset_ctrl1, reset_bit);
+ 	udelay(100);
+-	//enable clk 
++	//enable clk
+ 	clrbits_le32(&scu->clk_stop_ctrl1, clkstop_bit);
+ 	mdelay(10);
+ 	clrbits_le32(&scu->sysreset_ctrl1, reset_bit);
+@@ -533,10 +542,10 @@ static ulong ast2500_enable_extsdclk(struct ast2500_scu *scu)
+ 	clk_sel &= ~SCU_CLK_SD_MASK;
+ 	clk_sel |= SCU_CLK_SD_DIV(1);
+ 	writel(clk_sel, &scu->clk_sel1);
+-	
+-	//enable clk 
++
++	//enable clk
+ 	setbits_le32(&scu->clk_sel1, enableclk_bit);
+-	
++
+ 	return 0;
+ }
+ 
+diff --git a/drivers/i2c/ast_i2c.c b/drivers/i2c/ast_i2c.c
+index bd8add3d..1a629612 100644
+--- a/drivers/i2c/ast_i2c.c
++++ b/drivers/i2c/ast_i2c.c
+@@ -12,6 +12,7 @@
+ #include <i2c.h>
+ #include <asm/io.h>
+ #include <asm/arch/scu_ast2500.h>
++#include <asm/arch/ast-sdk/regs-scu.h>
+ 
+ #include "ast_i2c.h"
+ 
+@@ -107,7 +108,6 @@ static int ast_i2c_probe(struct udevice *dev)
+ 	int ret;
+ 
+ 	debug("Enabling I2C%u\n", dev->seq);
+-
+ 	/*
+ 	 * Enable the i2c dev when no pinctrl support
+ 	 * i.e. in SPL
+@@ -116,7 +116,12 @@ static int ast_i2c_probe(struct udevice *dev)
+ 	if (ret) {
+ 		return ret;
+ 	}
+-	//TODO scu reset and get clk
++	/*
++	 * Get all I2C devices out of Reset.
++	 * Only needs to be done once, but doing it for every
++	 * device does not hurt.
++	 */
++	clrbits_le32(AST_SCU_BASE + AST_SCU_RESET, SCU_RESET_I2C);
+ 
+ 	ast_i2c_init_bus(dev);
+ 
+diff --git a/drivers/net/phy/phy.c b/drivers/net/phy/phy.c
+index daea26c4..42623081 100644
+--- a/drivers/net/phy/phy.c
++++ b/drivers/net/phy/phy.c
+@@ -932,7 +932,9 @@ struct phy_device *phy_connect(struct mii_dev *bus, int addr,
+ #endif
+ 
+ #ifdef CONFIG_PHY_NCSI
+-	phydev = phy_device_create(bus, 0, PHY_NCSI_ID, false, interface);
++    if (!phydev && interface == PHY_INTERFACE_MODE_NCSI) {
++        phydev = phy_device_create(bus, 0, PHY_NCSI_ID, false, interface);
++    }
+ #endif
+ 
+ 	if (!phydev)
+@@ -988,3 +990,10 @@ int phy_get_interface_by_name(const char *str)
+ 
+ 	return -1;
+ }
++
++bool phy_interface_is_ncsi(void)
++{
++	struct eth_pdata *pdata = dev_get_platdata(eth_get_dev());
++
++	return pdata->phy_interface == PHY_INTERFACE_MODE_NCSI;
++}
+diff --git a/include/command.h b/include/command.h
+index be74f6ac..124d60a0 100644
+--- a/include/command.h
++++ b/include/command.h
+@@ -175,7 +175,7 @@ enum command_ret_t {
+  *			number of ticks the command took to complete.
+  * @return 0 if the command succeeded, 1 if it failed
+  */
+-int cmd_process(int flag, int argc, char * const argv[],
++enum command_ret_t cmd_process(int flag, int argc, char * const argv[],
+ 			       int *repeatable, unsigned long *ticks);
+ 
+ void fixup_cmdtable(cmd_tbl_t *cmdtp, int size);
+diff --git a/include/configs/cpo_ast2500.h b/include/configs/cpo_ast2500.h
+new file mode 100644
+index 00000000..0a37cc38
+--- /dev/null
++++ b/include/configs/cpo_ast2500.h
+@@ -0,0 +1,51 @@
++#ifndef __CPO_AST2500_H
++#define __CPO_AST2500_H
++
++#define CONFIG_FBMINIPACK 1
++
++#ifndef CONFIG_SYS_LONGHELP
++#define CONFIG_SYS_LONGHELP
++#endif
++
++#define CONFIG_BOOTARGS   "console=ttyS1,9600n8 root=/dev/ram rw"
++#define CONFIG_BOOTFILE   "flash-minipack"
++
++/*
++ * Serial configuration
++ */
++#define CONFIG_SYS_NS16550_COM1 AST_UART1_BASE
++#define CONFIG_CONS_INDEX       1
++#define CONFIG_ASPEED_COM       AST_UART1_BASE
++
++/*
++ * UART configurtion
++ */
++#define CONFIG_ASPEED_UART1_ENABLE
++#define CONFIG_ASPEED_UART1_BMC // by default, src is LPC for UART1
++#define CONFIG_ASPEED_UART2_ENABLE
++#define CONFIG_ASPEED_UART2_BMC // by default, src is LPC for UART2
++#define CONFIG_ASPEED_UART3_ENABLE
++#define CONFIG_ASPEED_UART4_ENABLE
++#define CONFIG_ASPEED_UART5_MAP_IO6
++
++/*
++ * NIC configuration
++ */
++#define CONFIG_PHY_BROADCOM_MODE1000X
++/*
++#define CONFIG_MAC2_ENABLE
++#define CONFIG_MAC1_PHY_SETTING     0
++#define CONFIG_MAC2_PHY_SETTING     0
++#define CONFIG_ASPEED_MAC_NUMBER  2
++#define CONFIG_ASPEED_MAC_CONFIG  2
++*/
++
++/*
++ * Enable DRAM ECC, going to lose 1/8 of memory
++ */
++#define CONFIG_DRAM_ECC
++
++#include "facebook_common.h"
++#include "ast2500_common.h"
++
++#endif  /* __CPO_AST2500_H */
+diff --git a/include/configs/facebook_common_v0.h b/include/configs/facebook_common_v0.h
+index 2e5fcc46..0fcf5807 100644
+--- a/include/configs/facebook_common_v0.h
++++ b/include/configs/facebook_common_v0.h
+@@ -49,9 +49,9 @@
+ #define CONFIG_SYS_UBOOT_START    0x00000000
+ #define CONFIG_SYS_ENV_BASE       0x20000000
+ #ifdef CONFIG_FIT
+-#define CONFIG_KERNEL_LOAD        "20080000"
++#define CONFIG_KERNEL_LOAD        "200C0000"
+ #else
+-#define CONFIG_KERNEL_LOAD        "20080000 20480000"
++#define CONFIG_KERNEL_LOAD        "200C0000 204C0000"
+ #endif
+ #endif
+ 
+@@ -78,14 +78,15 @@
+ #define CONFIG_ENV_IS_IN_SPI_FLASH
+ #define CONFIG_ENV_OVERWRITE
+ #endif
+-#define CONFIG_ENV_OFFSET        0x60000 /* environment starts here  */
++#define CONFIG_ENV_OFFSET        0x80000 /* environment starts here  */
+ #define CONFIG_ENV_ADDR          (CONFIG_SYS_ENV_BASE + CONFIG_ENV_OFFSET)
+-#define CONFIG_ENV_SIZE          0x20000 /* # of bytes of env, 128k */
++#define CONFIG_ENV_SIZE          0x40000 /* # of bytes of env, 128k */
+ #define CONFIG_ENV_SECT_SIZE	 (64 << 10) /* 64 KiB */
+ #define ENV_INITRD_HIGH "initrd_high=a0000000\0"
+ #define CONFIG_EXTRA_ENV_SETTINGS                       \
+     "verify=no\0"                                       \
+     "spi_dma=no\0"                                      \
++    "switchflash=mw.l 0x1e785024 0xF4240 1; mw.l 0x1e785028 0x4755 1;mw.l 0x1e78502c 0xb3 1\0" \
+     "updatefile=" CONFIG_BOOTFILE ".fit\0"              \
+     ENV_INITRD_HIGH                                     \
+     ""
+@@ -170,7 +171,7 @@
+  * For verified-boot the command will be overridden in fdt
+  */
+ #define CONFIG_BOOTCOMMAND                                \
+-  "bootm " CONFIG_KERNEL_LOAD "; " /* Location of FIT */  \
++  "bootm " CONFIG_KERNEL_LOAD " || run switchflash" /* Location of FIT */  \
+   CONFIG_POSTBOOT
+ 
+ /*
+@@ -256,8 +257,8 @@
+ /*
+  * Autoboot configuration
+  */
+-#define CONFIG_AUTOBOOT_PROMPT		"autoboot in %d seconds (stop with 'Delete' key)...\n"
+-#define CONFIG_AUTOBOOT_STOP_STR	"\x1b\x5b\x33\x7e"	/* 'Delete', ESC[3~ */
++#define CONFIG_AUTOBOOT_PROMPT		"autoboot in %d seconds (stop with 'ctrl + c' key)...\n"
++#define CONFIG_AUTOBOOT_STOP_STR	"\x03"
+ #define CONFIG_AUTOBOOT_KEYED
+ 
+ #define CONFIG_USE_BOOTCOMMAND
+diff --git a/include/configs/wb_ast2500.h b/include/configs/wb_ast2500.h
+new file mode 100644
+index 00000000..93285d05
+--- /dev/null
++++ b/include/configs/wb_ast2500.h
+@@ -0,0 +1,51 @@
++#ifndef __WB_AST2500_H
++#define __WB_AST2500_H
++
++#define CONFIG_FBMINIPACK 1
++
++#ifndef CONFIG_SYS_LONGHELP
++#define CONFIG_SYS_LONGHELP
++#endif
++
++#define CONFIG_BOOTARGS   "console=ttyS0,115200n8 root=/dev/ram rw"
++#define CONFIG_BOOTFILE   "flash-minipack"
++
++/*
++ * Serial configuration
++ */
++#define CONFIG_SYS_NS16550_COM1 AST_UART0_BASE
++#define CONFIG_CONS_INDEX       1
++#define CONFIG_ASPEED_COM       AST_UART0_BASE
++
++/*
++ * UART configurtion
++ */
++#define CONFIG_ASPEED_UART1_ENABLE
++#define CONFIG_ASPEED_UART1_BMC // by default, src is LPC for UART1
++#define CONFIG_ASPEED_UART2_ENABLE
++#define CONFIG_ASPEED_UART2_BMC // by default, src is LPC for UART2
++#define CONFIG_ASPEED_UART3_ENABLE
++#define CONFIG_ASPEED_UART4_ENABLE
++#define CONFIG_ASPEED_UART5_MAP_IO6
++
++/*
++ * NIC configuration
++ */
++#define CONFIG_PHY_BROADCOM_MODE1000X
++/*
++#define CONFIG_MAC2_ENABLE
++#define CONFIG_MAC1_PHY_SETTING     0
++#define CONFIG_MAC2_PHY_SETTING     0
++#define CONFIG_ASPEED_MAC_NUMBER  2
++#define CONFIG_ASPEED_MAC_CONFIG  2
++*/
++
++/*
++ * Enable DRAM ECC, going to lose 1/8 of memory
++ */
++#define CONFIG_DRAM_ECC
++
++#include "facebook_common.h"
++#include "ast2500_common.h"
++
++#endif  /* __WB_AST2500_H */
+diff --git a/include/image.h b/include/image.h
+index a440c61e..ca358a83 100644
+--- a/include/image.h
++++ b/include/image.h
+@@ -19,6 +19,8 @@
+ #include <asm/byteorder.h>
+ #include <stdbool.h>
+ 
++#define DEF_CONF_FIT_NAME_LEN (128)
++
+ /* Define this to avoid #ifdefs later on */
+ struct lmb;
+ struct fdt_region;
+diff --git a/include/phy.h b/include/phy.h
+index ed21775f..a759d040 100644
+--- a/include/phy.h
++++ b/include/phy.h
+@@ -287,6 +287,8 @@ static inline bool phy_interface_is_sgmii(struct phy_device *phydev)
+ 		phydev->interface <= PHY_INTERFACE_MODE_QSGMII;
+ }
+ 
++bool phy_interface_is_ncsi(void);
++
+ /* PHY UIDs for various PHYs that are referenced in external code */
+ #define PHY_UID_CS4340  	0x13e51002
+ #define PHY_UID_CS4223  	0x03e57003
+diff --git a/net/net.c b/net/net.c
+index f0f9cd4d..2142815a 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -409,8 +409,8 @@ int net_loop(enum proto_t protocol)
+ 	debug_cond(DEBUG_INT_STATE, "--- net_loop Entry\n");
+ 
+ #ifdef CONFIG_PHY_NCSI
+-	if (protocol != NCSI && !ncsi_active()) {
+-		printf("Configuring NCSI\n");
++	if (phy_interface_is_ncsi() && protocol != NCSI && !ncsi_active()) {
++		printf("%s: configuring NCSI first\n", __func__);
+ 		if (net_loop(NCSI) < 0)
+ 			return ret;
+ 		eth_init_state_only();
+-- 
+2.25.1
+

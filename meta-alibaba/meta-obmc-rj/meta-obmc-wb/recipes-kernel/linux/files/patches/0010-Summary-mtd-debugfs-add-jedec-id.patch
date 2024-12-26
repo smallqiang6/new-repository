@@ -1,0 +1,148 @@
+From 81b4813ea8b6104134c4507ae7e664659b30ac8c Mon Sep 17 00:00:00 2001
+From: luohao <luoh@ruijie.com.cn>
+Date: Tue, 17 Dec 2024 15:36:02 +0800
+Subject: [PATCH] Summary:(mtd debugfs add jedec id)
+
+BranchName: facebook-meta-whitebox-master
+CAFID: N202412174993
+BUGID: 1265086
+WorkPackageName: BSP
+The ratio of self research code(0~1): 1
+
+Change-Id: I6bc8ef07597273e96987f2fef5b10d1cd803be0c
+---
+ drivers/mtd/mtdcore.c      | 26 ++++++++++++++++++++++++--
+ drivers/mtd/spi-nor/core.c | 38 ++++++++++++++++++++++++++++++++++++++
+ include/linux/mtd/mtd.h    |  2 ++
+ 3 files changed, 64 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mtd/mtdcore.c b/drivers/mtd/mtdcore.c
+index 61f236e03..e281e9a87 100644
+--- a/drivers/mtd/mtdcore.c
++++ b/drivers/mtd/mtdcore.c
+@@ -4,7 +4,7 @@
+  * drivers and users.
+  *
+  * Copyright © 1999-2010 David Woodhouse <dwmw2@infradead.org>
+- * Copyright © 2006      Red Hat UK Limited 
++ * Copyright © 2006      Red Hat UK Limited
+  */
+ 
+ #include <linux/module.h>
+@@ -358,6 +358,23 @@ static int mtd_partname_debug_show(struct seq_file *s, void *p)
+ 
+ DEFINE_SHOW_ATTRIBUTE(mtd_partname_debug);
+ 
++static int mtd_jedec_id_debug_show(struct seq_file *s, void *p)
++{
++    struct mtd_info *mtd = s->private;
++    struct mtd_info *master = mtd_get_master(mtd);
++    int jedec_id;
++
++    jedec_id = master->_read_jedec_id(master);
++    if (jedec_id < 0) {
++        seq_printf(s, "ACCESS FAILED\n", jedec_id);
++    } else {
++        seq_printf(s, "0x%06x\n", jedec_id);
++    }
++    return 0;
++}
++
++DEFINE_SHOW_ATTRIBUTE(mtd_jedec_id_debug);
++
+ static struct dentry *dfs_dir_mtd;
+ 
+ static void mtd_debugfs_populate(struct mtd_info *mtd)
+@@ -379,6 +396,11 @@ static void mtd_debugfs_populate(struct mtd_info *mtd)
+ 	if (master->dbg.partname)
+ 		debugfs_create_file("partname", 0400, root, master,
+ 				    &mtd_partname_debug_fops);
++
++    if (master->_read_jedec_id) {
++        debugfs_create_file("jedec_id", 0400, root, master,
++                    &mtd_jedec_id_debug_fops);
++    }
+ }
+ 
+ #ifndef CONFIG_MMU
+@@ -2358,7 +2380,7 @@ static struct backing_dev_info * __init mtd_bdi_init(const char *name)
+ 
+ 	/*
+ 	 * We put '-0' suffix to the name to get the same name format as we
+-	 * used to get. Since this is called only once, we get a unique name. 
++	 * used to get. Since this is called only once, we get a unique name.
+ 	 */
+ 	ret = bdi_register(bdi, "%.28s-0", name);
+ 	if (ret)
+diff --git a/drivers/mtd/spi-nor/core.c b/drivers/mtd/spi-nor/core.c
+index 6c34c3919..cac02f4c6 100644
+--- a/drivers/mtd/spi-nor/core.c
++++ b/drivers/mtd/spi-nor/core.c
+@@ -2014,6 +2014,43 @@ static const struct flash_info *spi_nor_read_id(struct spi_nor *nor)
+ 	return ERR_PTR(-ENODEV);
+ }
+ 
++static int spi_nor_read_jedec_id(struct mtd_info *mtd)
++{
++	struct spi_nor *nor = mtd_to_spi_nor(mtd);
++	u8 id[SPI_NOR_MAX_ID_LEN];
++	int ret, jedec_id;
++
++	dev_dbg(nor->dev, "read jedec_id\n");
++
++	ret = spi_nor_lock_and_prep(nor);
++	if (ret) {
++		dev_dbg(nor->dev, "spi_nor_lock_and_prep failed, ret: %d\n", ret);
++		return -EBUSY;
++	}
++
++	memset(id, 0, sizeof(id));
++	if (nor->spimem) {
++		struct spi_mem_op op =
++			SPI_MEM_OP(SPI_MEM_OP_CMD(SPINOR_OP_RDID, 1),
++				   SPI_MEM_OP_NO_ADDR,
++				   SPI_MEM_OP_NO_DUMMY,
++				   SPI_MEM_OP_DATA_IN(SPI_NOR_MAX_ID_LEN, id, 1));
++
++		ret = spi_mem_exec_op(nor->spimem, &op);
++	} else {
++		ret = nor->controller_ops->read_reg(nor, SPINOR_OP_RDID, id,
++						    SPI_NOR_MAX_ID_LEN);
++	}
++	if (ret) {
++		dev_dbg(nor->dev, "error %d reading JEDEC ID\n", ret);
++		spi_nor_unlock_and_unprep(nor);
++		return -EIO;
++	}
++	jedec_id = ((id[0] << 16) | (id[1] << 8) | (id[2]));
++	spi_nor_unlock_and_unprep(nor);
++	return jedec_id;
++}
++
+ static int spi_nor_read(struct mtd_info *mtd, loff_t from, size_t len,
+ 			size_t *retlen, u_char *buf)
+ {
+@@ -3247,6 +3284,7 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
+ 	mtd->_resume = spi_nor_resume;
+ 	mtd->_get_device = spi_nor_get_device;
+ 	mtd->_put_device = spi_nor_put_device;
++	mtd ->_read_jedec_id = spi_nor_read_jedec_id;
+ 
+ 	if (info->flags & USE_FSR)
+ 		nor->flags |= SNOR_F_USE_FSR;
+diff --git a/include/linux/mtd/mtd.h b/include/linux/mtd/mtd.h
+index 8a2c60235..0a003b789 100644
+--- a/include/linux/mtd/mtd.h
++++ b/include/linux/mtd/mtd.h
+@@ -396,6 +396,8 @@ struct mtd_info {
+ 
+ 	struct mtd_part part;
+ 	struct mtd_master master;
++    /* read jedec_id ops */
++    int (*_read_jedec_id) (struct mtd_info *mtd);
+ };
+ 
+ static inline struct mtd_info *mtd_get_master(struct mtd_info *mtd)
+-- 
+2.25.1
+

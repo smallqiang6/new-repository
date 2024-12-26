@@ -1,0 +1,53 @@
+{
+    "PIDDebugEnabled": false,
+    "PwmMetaDebugEnabled": false,
+    "PID": {
+        "SWITCH": {
+            "Enabled": true,
+            "Proportion": 1.17647,
+            "Integral": 0.11765,
+            "Differential": 0.11765,
+            "TargetTemperature": 90.0,
+            "PwmMin": 50.0,
+            "PwmMax": 100.0
+        },
+        "CPU": {
+            "Enabled": true,
+            "Proportion": 1.17647,
+            "Integral": 0.19608,
+            "Differential": 0.19608,
+            "TargetTemperature": 89.0,
+            "PwmMin": 50.0,
+            "PwmMax": 100.0
+        }
+    },
+    "LINEAR": {
+        "INLET": {
+            "Enabled": true,
+            "TemperatureMin": 20.0,
+            "TemperatureMax": 35.0,
+            "TemperatureFixup": 2.0,
+            "TemperatureShowFixupLow": 2.0,
+            "TemperatureShowFixupHigh": 2.0,
+            "PwmMin": 50.0,
+            "PwmMax": 100.0,
+            "FallingHysteresis": 2.0
+        }
+    },
+    "ADJUSTIVE": {
+        "NIC": {
+            "Enabled": true,
+            "TemperatureMin": 82.0,
+            "TemperatureMax": 85.0,
+            "TemperatureFixup": 0.0,
+            "TemperatureShowFixupLow": 0.0,
+            "TemperatureShowFixupHigh": 0.0,
+            "PwmIncGran": 10.0,
+            "PwmDecGran": 5.0,
+            "PwmIncInterval": 15,
+            "PwmDecInterval": 300,
+            "PwmMin": 50.0,
+            "PwmMax": 100.0
+        }
+    }
+}

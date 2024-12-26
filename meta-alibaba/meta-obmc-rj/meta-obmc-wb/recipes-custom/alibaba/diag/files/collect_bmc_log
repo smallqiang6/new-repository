@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+# -*- coding: UTF-8 -*-
+# Copyright (C) 2023, Ruijie Networks Co., Ltd. All rights reserved.
+# No part of this script may be reproduced, distributed,
+# or transmitted in any form or by any means,
+# without the prior written permission of the author.
+import os
+import sys
+import subprocess
+import re
+import socket
+import json
+import argparse
+
+from hal.hal_misc import HalMisc
+from plat_hal.interface import interface
+from hal.hal_bmc import HalBmc
+
+def usage():
+    print("usage:")
+    print("    collect_bmc_log [--type type_name|type_list] [--output file|console]")
+
+def command(cmdstr):
+    retcode, output = subprocess.getstatusoutput(cmdstr)
+    return retcode, output
+
+# exec shell command
+def log_os_system(cmd, show):
+    status, output = command(cmd)
+    if status:
+        if show:
+            print('Failed :'+ cmd)
+    return  status, output
+
+def get_device_branch():
+    Device = socket.gethostname()
+    if Device == "bmc":
+        ret_t, log = command(" cat /etc/device/productname") 
+        if "can't open" in log:
+            print("do not find config file")
+        else:
+            return log.lower()
+    else:
+         return Device
+
+def get_conffit_branch():
+    Device = socket.gethostname()
+    if Device == "bmc":
+        ret_t, log = command(" cat /etc/device/conffitname")
+        if "can't open" in log:
+            print("do not find config file")
+        else:
+            return log.lower()
+    else:
+         return Device
+
+def get_full_product_name():
+    full_product_path = "/etc/device/fullproductname"
+    if not os.path.exists(full_product_path):
+        return None
+    cmd = "cat %s"%(full_product_path)
+    ret,log=log_os_system(cmd,0)
+    if ret !=0 or len(log) < 1:
+        return None
+    else:
+        return log
+
+def init_env():
+    global  module_product, default_location, default_timeout, output_to_console, custom_list_conf, \
+        diag_list_conf, COLLECT_CONF, default_way, misc_case, bmc_case, int_case
+    # import diag conf
+    Device_branch = get_device_branch()
+    grtd_productfile = ("BMC_alibaba_"+Device_branch+ "_rj_r0_config").replace("-","_")
+
+    Conffit_branch = get_conffit_branch()
+    grtd_conffitfile = ("BMC_alibaba_" + Conffit_branch + "_rj_r0_config").replace("-","_")
+
+    configfile_pre   =  "/usr/local/bin/"
+    sys.path.append(configfile_pre)
+
+    if os.path.exists(configfile_pre + grtd_conffitfile + ".py"):
+        module_product  = __import__(grtd_conffitfile, globals(), locals(), [])
+    elif os.path.exists(configfile_pre + grtd_productfile + ".py"):
+        module_product  = __import__(grtd_productfile, globals(), locals(), [])
+    else:
+        print("do not find config file")
+        exit(-1)
+    # import custom conf
+    collect_conf_file = "/usr/local/bin/collect_info.conf"
+    if os.path.exists(collect_conf_file):
+        with open(collect_conf_file) as f:
+            COLLECT_CONF = json.loads(re.split("# JSON configuration area.*\n", f.read())[-1])
+    else:
+        print("%s does not exist" % collect_conf_file)
+        exit(-1)
+
+    output_to_console = "console"
+    default_timeout = 20
+    default_location = "/var/log/collect_bmc"
+    default_way = "shell"
+    custom_list_conf = list(COLLECT_CONF.keys())
+    diag_list_conf = ["e2", "cpld"]
+    misc_case = HalMisc()
+    bmc_case = HalBmc()
+    int_case = interface()
+
+def eval_cmd(cmd):
+    ret = 0
+    log = ""
+    try:
+        log = eval(cmd)
+    except:
+        ret = -1
+    return ret, log
+
+def exec_python_commond(cmd, location):
+    ret, cmd_log = eval_cmd(cmd)
+    if output_form == output_to_console:
+        print(cmd_log)
+    else:
+        os.system("echo %s >> %s" % (cmd_log, location))
+    return ret
+
+def exec_shell_commond(cmd, location):
+    if output_form == output_to_console:
+        return os.system(cmd)
+    else:   
+        return os.system("%s >> %s 2>&1" %(cmd, location))
+
+def exec_command(cmd, location, way):
+    if way == default_way:
+        return exec_shell_commond(cmd, location)
+    else:
+        return exec_python_commond(cmd, location)
+
+def output_message(cmd, timeout, file_location, way, opt = 0):
+    info_header = "\n==================> %s <==================" % cmd
+    exec_command("echo -e '%s'" % info_header, file_location, default_way)
+    # Limit shell command execution time
+    if way != default_way:
+        cmd_str = cmd
+    else:
+        cmd_str = "timeout %s %s" % (timeout, cmd)
+    ret = exec_command(cmd_str, file_location, way)
+    info_end = "****************************************\n"
+    exec_command("echo -e '%s'" % info_end, file_location, default_way)
+    position = file_location if output_form != output_to_console else output_to_console
+    if ret != 0:
+        if opt == 1:
+            print("    collect: '%s', to %s failed. optional component, and please check!" %(cmd, position))
+            ret = 0
+        else:
+            print("    collect: '%s', to %s failed" %(cmd, position))
+    else:
+        print("    collect: '%s', to %s done" %(cmd, position))
+    return ret
+
+def collect_custom_info(cmd_info):
+    cmd = cmd_info.get("cmd")
+    file_location = cmd_info.get("location", default_location)
+    timeout = cmd_info.get("timeout", default_timeout)
+    match_cmd = cmd_info.get("match_cmd", None)
+    way = cmd_info.get("way", default_way)
+    # Check whether the command is suitable for the product
+    if match_cmd != None:
+        match_ret = os.system(match_cmd)
+        if match_ret != 0:
+            print("    cmd(%s) is inappropriate" %cmd)
+            return 0
+    return output_message(cmd, timeout, file_location, way)
+
+def collect_custom_info_loop():
+    custom_error_count = 0
+    for type in custom_list:
+        print("Collecting %s:" % type)
+        cmd_dic = COLLECT_CONF.get(type, None)
+        if len(cmd_dic) == 0:
+            print("  error, %s configuration is empty" % type)
+            custom_error_count -= 1
+            continue
+        for cmd_info in cmd_dic:
+            if collect_custom_info(cmd_info):
+                custom_error_count -= 1
+    return custom_error_count
+
+def dump_addr(bus, addr, opt):
+    cmd = "i2cdump -f -y %s 0x%02x" % (bus, addr)
+    way = default_way
+    return output_message(cmd, default_timeout, default_location, way, opt)
+
+def collect_cpld_info():
+    print("Collecting cpld(diag):")
+    CPLD_TEST = module_product.CPLD_TEST
+    tmp_product_name = get_full_product_name()
+    err_count = 0
+    for cpld in CPLD_TEST:
+        bus = cpld.get("bus")
+        addr = cpld.get("addr")
+        extra = cpld.get("extra", None)
+        opt = cpld.get("opt", 0)
+        if extra != None and extra not in tmp_product_name:
+            continue
+        if dump_addr(bus, addr, opt) != 0:
+            err_count -= 1
+    return err_count
+
+def collect_e2_info():
+    print("Collecting e2:")
+    E2_DEV = module_product.E2_DEV
+    err_count = 0
+    tmp_product_name = get_full_product_name()
+    for e2 in E2_DEV.keys():
+        e2_info = E2_DEV.get(e2)
+        e2_addr = e2_info.get("list")
+        extra = e2_info.get("extra", None)
+        opt = e2_info.get("opt", 0)
+        for info in e2_addr:
+            bus = info.get("bus")
+            addr = info.get("addr")
+            chk = info.get("extra", None)
+            if extra != None and extra not in tmp_product_name:
+                continue
+            if chk != None and chk not in tmp_product_name:
+                continue
+            if dump_addr(bus, addr, opt) != 0:
+                err_count -= 1
+    return err_count
+
+
+def collect_diag_info():
+    diag_err_count = 0
+    if "e2" in diag_list:
+        if collect_e2_info() != 0:
+            diag_err_count -= 1
+    if "cpld" in diag_list:
+        if collect_cpld_info() != 0:
+            diag_err_count -= 1
+    return diag_err_count
+
+def check_collect_list(type_list):
+    all_type = "all"
+    base_type = "base"
+    e2_type = "e2"
+    cpld_type = "cpld"
+    check_err_count = 0
+    global custom_list
+    global diag_list
+    custom_list = []
+    diag_list = []
+    if all_type in type_list:
+        custom_list = custom_list_conf
+        diag_list = diag_list_conf
+    else:
+        # According to the conf, verify whether each type is legal
+        for type in type_list:
+            if type not in custom_list_conf and type not in diag_list_conf:
+                print("unknown type: %s" % type)
+                check_err_count = -1
+                break
+            if type == e2_type:
+                diag_list.append(e2_type)
+                type_list.remove(e2_type)
+            if type == cpld_type:
+                diag_list.append(cpld_type)
+        # When an unknown type is included, all types will be collected
+        if check_err_count < 0:
+            usage()
+            print("type_list error: %s, and collect all:" % type_list)
+            custom_list = custom_list_conf
+            diag_list = diag_list_conf
+        else:
+            custom_list = type_list
+    # Base type must be collected
+    if base_type not in custom_list:
+        custom_list.insert(0, base_type)
+    # There may be no cpld types in the custom conf
+    if cpld_type not in custom_list_conf and cpld_type in custom_list:
+        custom_list.remove(cpld_type)
+    return check_err_count
+
+def collect_bmc_log(type_str, form):
+    # Convert to list and remove duplicate types
+    list_flag = ";"
+    type_list = list(set(type_str.split(list_flag)))
+    global output_form
+    output_form = form
+    totalerr = 0
+    try:
+        # Clear existing logs
+        log_os_system("rm -rf %s*" % default_location, 0)
+        # Check and split list
+        type_list = type_str.split(list_flag)
+        check_ret = check_collect_list(type_list)
+        if check_ret != 0:
+            totalerr -= 1
+        if output_form == output_to_console:
+            print("The collected information will be displayed to the console")
+        else:
+            print("The collected information will be stored in the specified file")
+        # Collect the information specified in diag conf
+        if collect_diag_info() !=0:
+            totalerr -= 1
+        # Collect the information specified in custom conf
+        if collect_custom_info_loop() !=0:
+            totalerr -= 1
+
+    except Exception as e:
+        totalerr -= 1
+        print("exception occurred: %s" % e)
+
+    if totalerr < 0:
+        print("Collection failed")
+        return -1
+    else:
+        print("Collection completed")
+        return 0
+
+def get_args():
+    type_list_all = list(set(custom_list_conf + diag_list_conf))
+    type_list_all.append("all")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--type", default="all", type=str, metavar="type|type_list", \
+        help = "Information type(s), type: %s, multiple: 'type1;type2;...'" % type_list_all, nargs= "?")
+    parser.add_argument("--output", default="file", type=str, choices=["file", "console"], \
+        metavar="file|console", help = "Output form, file: stored in file, console: output to console", nargs= "?")
+    return parser.parse_args()
+
+if __name__ == '__main__':
+    """
+    collect bmc log
+    """
+    try:
+        init_env()
+        args = get_args()
+        collect_bmc_log(args.type, args.output)
+
+    except Exception as e:
+        print("Error returned: " + str(e))

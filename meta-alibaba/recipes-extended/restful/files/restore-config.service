@@ -1,0 +1,9 @@
+[Unit]
+Description=Restore System Configuration after BMC reboot
+After=network.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/lib/python3.12/site-packages/restful/restore-config.pyc
+
+[Install]
+WantedBy=multi-user.target

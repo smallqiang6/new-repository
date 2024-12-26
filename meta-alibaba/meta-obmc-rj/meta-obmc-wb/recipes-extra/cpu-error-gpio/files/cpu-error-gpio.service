@@ -1,0 +1,11 @@
+[Unit]
+Description=cpu-error-gpio
+After=init-platform.service
+ConditionPathExists=!/etc/device/product_capacity/disable/%N
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env cpu-error-gpio
+
+[Install]
+WantedBy=sonic.target
